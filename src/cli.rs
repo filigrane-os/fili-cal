@@ -31,7 +31,7 @@ use std::{
 
 use chrono::{Duration, NaiveDateTime, Timelike};
 use crate::ics::{self, Event, Freq, Rule};
-use crate::{calendars, subscribe, undo, when};
+use crate::{calendars, dav, subscribe, undo, when};
 use serde_json::json;
 
 /// The tests that point the store at a folder of their own take turns
@@ -151,17 +151,21 @@ pub fn load(id: &str) -> Result<Event, String> {
 }
 
 /// The events of a subscription come from its link: they cannot be changed here
-fn read_only(calendar: &str) -> Result<(), String> {
-    match calendars::subscription(calendar) {
-        Some(c) => Err(crate::i18n::trf("%1 is a subscription: its events cannot be changed", &[&c.name])),
-        None => Ok(()),
+fn read_only(calendar: &str, id: &str) -> Result<(), String> {
+    if let Some(c) = calendars::subscription(calendar) {
+        return Err(crate::i18n::trf("%1 is a subscription: its events cannot be changed", &[&c.name]));
     }
+    // an event of an account that the server keeps as several events (a series with a changed occurrence)
+    if calendars::account(calendar).is_some() && crate::dav::locked(&crate::dav::load(calendar), id) {
+        return Err(crate::i18n::tr("this event is made of several parts on the server: change it in the application it comes from").to_string());
+    }
+    Ok(())
 }
 
 /// Writes an event in its calendar (a changed calendar moves the file)
 pub fn save(id: &str, e: &Event) -> Result<(), String> {
     let p = path_in(&e.calendar, id)?;
-    read_only(&calendar_of(&p))?;
+    read_only(&calendar_of(&p), id)?;
     fs::create_dir_all(p.parent().ok_or("no folder")?).map_err(|x| x.to_string())?;
     let before = fs::read_to_string(&p).ok();
     let tmp = p.with_extension("ics.new");
@@ -185,7 +189,7 @@ pub fn save(id: &str, e: &Event) -> Result<(), String> {
 /// Deletes the file of an event (the step can be undone)
 pub fn delete(id: &str) -> Result<(), String> {
     let p = path_of(id)?;
-    read_only(&calendar_of(&p))?;
+    read_only(&calendar_of(&p), id)?;
     let before = fs::read_to_string(&p).ok();
     fs::remove_file(&p).map_err(|x| x.to_string())?;
     undo::record(&calendar_of(&p), id, before, None);
@@ -557,7 +561,27 @@ fn run_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `fili-cal calendar list|add NAME [COLOR]|subscribe LINK NAME [COLOR] [--refresh MINUTES]|sync [NAME]|rename NAME NEW|color NAME TONE|hide NAME|show NAME|rm NAME`
+/// The password of `calendar connect`: the first line of the standard input (nothing is shown while it is typed on a terminal)
+fn read_password() -> Result<String, String> {
+    use std::io::{IsTerminal, Write};
+    let tty = std::io::stdin().is_terminal();
+    if tty {
+        eprint!("{}", crate::i18n::tr("Password: "));
+        let _ = std::io::stderr().flush();
+        let _ = std::process::Command::new("stty").arg("-echo").status();
+    }
+    let mut line = String::new();
+    let read = std::io::stdin().read_line(&mut line);
+    if tty {
+        let _ = std::process::Command::new("stty").arg("echo").status();
+        eprintln!();
+    }
+    read.map_err(|e| e.to_string())?;
+    let pw = line.trim_end_matches(['\n', '\r']).to_string();
+    if pw.is_empty() { Err(crate::i18n::tr("the password is empty").to_string()) } else { Ok(pw) }
+}
+
+/// `fili-cal calendar list|connect ADDRESS USER (password on the standard input)|add NAME [COLOR]|subscribe LINK NAME [COLOR] [--refresh MINUTES]|sync [NAME]|rename NAME NEW|color NAME TONE|hide NAME|show NAME|rm NAME`
 fn calendar_command(w: &[String], refresh: Option<u32>) -> Result<(), String> {
     let need = |i: usize, what: &str| w.get(i).cloned().ok_or(format!("calendar: {what} is missing"));
     let slug = |i: usize| -> Result<String, String> {
@@ -567,7 +591,7 @@ fn calendar_command(w: &[String], refresh: Option<u32>) -> Result<(), String> {
     match w.first().map(String::as_str).unwrap_or("list") {
         "list" => {
             for c in calendars::list() {
-                println!("{}\t{}\t{}{}", c.slug, c.name, c.color, if c.hidden { "\thidden" } else { "" });
+                println!("{}\t{}\t{}{}{}", c.slug, c.name, c.color, if c.url.is_some() { "\tsubscription" } else if c.caldav.is_some() { "\taccount" } else { "" }, if c.hidden { "\thidden" } else { "" });
             }
         }
         "add" => println!("{}", calendars::create(&need(1, "the name")?, w.get(2).map_or("", String::as_str))?.slug),
@@ -578,11 +602,25 @@ fn calendar_command(w: &[String], refresh: Option<u32>) -> Result<(), String> {
             subscribe::spawn_due();
         }
         "sync" => subscribe::sync_command(w.get(1).map(String::as_str))?,
+        "connect" => {
+            let (address, user) = (need(1, "the address")?, need(2, "the user name")?);
+            let pw = read_password()?;
+            let made = dav::connect(&dav::Curl::new(&user, &pw), &address, &user, &pw, true)?;
+            for n in &made {
+                println!("{n}");
+            }
+            // the first fetch happens now, in the background
+            subscribe::spawn_due();
+        }
         "rename" => calendars::update(&slug(1)?, "name", &need(2, "the new name")?)?,
         "color" => calendars::update(&slug(1)?, "color", &need(2, "the tone")?)?,
         "hide" => calendars::update(&slug(1)?, "hidden", "true")?,
         "show" => calendars::update(&slug(1)?, "hidden", "false")?,
-        "rm" => calendars::remove(&slug(1)?)?,
+        "rm" => {
+            let s = slug(1)?;
+            calendars::remove(&s)?;
+            dav::forget_password(&s);
+        }
         other => return Err(format!("calendar: unknown command {other} (list, add, rename, color, hide, show, rm)")),
     }
     Ok(())

@@ -7,6 +7,7 @@ mod bridge;
 mod calendars;
 mod cli;
 mod ctl;
+mod dav;
 mod i18n;
 mod ics;
 mod logs;
@@ -17,6 +18,7 @@ mod theme;
 mod undo;
 mod when;
 mod window;
+mod xml;
 mod zone;
 
 pub use cli::short_hash;

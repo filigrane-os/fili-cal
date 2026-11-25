@@ -138,6 +138,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "calendarAdd"]
         fn calendar_add(self: Pin<&mut Agenda>, name: &QString, color: &QString, url: &QString) -> QString;
+        // Connects a CalDAV account (address, user, password) in a process of its own: the calendars of the account appear when
+        // it is done, and `message` says how it went. The password goes to the keyring, nowhere else.
+        #[qinvokable]
+        #[cxx_name = "accountConnect"]
+        fn account_connect(self: Pin<&mut Agenda>, address: &QString, user: &QString, password: &QString);
         // Fetches the subscriptions now (in the background); the files are read again a little later
         #[qinvokable]
         #[cxx_name = "syncNow"]
@@ -481,6 +486,16 @@ impl qobject::Agenda {
 
     pub fn refresh(mut self: Pin<&mut Self>) {
         let (from, to) = self.range.clone();
+        // how a connection that was started here ended
+        let note = cli::state().join("fili-cal").join("connect.txt");
+        if let Ok(text) = std::fs::read_to_string(&note) {
+            let _ = std::fs::remove_file(&note);
+            let (kind, rest) = text.split_once('\t').unwrap_or(("error", &text));
+            let shown = if kind == "ok" { i18n::trf("Connected: %1", &[&rest]) } else { rest.to_string() };
+            self.as_mut().rust_mut().message = QString::from(&shown);
+            self.as_mut().rust_mut().failed = kind != "ok";
+            self.as_mut().changed();
+        }
         let scan = cli::scan();
         let json = model::events_json_of(&scan.events, &from, &to);
         // Files that cannot be read are told in the footer instead of vanishing
@@ -570,10 +585,38 @@ impl qobject::Agenda {
         QString::from(&crate::calendars::json())
     }
 
+    pub fn account_connect(mut self: Pin<&mut Self>, address: &QString, user: &QString, password: &QString) {
+        let (address, user, password) = (address.to_string(), user.to_string(), password.to_string());
+        let Ok(exe) = std::env::current_exe() else { return };
+        let child = std::process::Command::new(exe).args(["calendar", "connect", &address, &user]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn();
+        let Ok(mut child) = child else {
+            self.as_mut().fail(i18n::tr("could not start the connection").to_string());
+            return;
+        };
+        if let Some(mut pipe) = child.stdin.take() {
+            use std::io::Write;
+            let _ = writeln!(pipe, "{password}");
+        }
+        self.as_mut().rust_mut().message = QString::from(&i18n::tr("Connecting…").to_string());
+        self.as_mut().rust_mut().failed = false;
+        self.as_mut().changed();
+        // the result is told by a file, read by the next refresh
+        std::thread::spawn(move || {
+            let note = match child.wait_with_output() {
+                Ok(o) if o.status.success() => format!("ok\t{}", String::from_utf8_lossy(&o.stdout).lines().collect::<Vec<_>>().join(", ")),
+                Ok(o) => format!("error\t{}", String::from_utf8_lossy(&o.stderr).lines().next().unwrap_or("").trim_start_matches("fili-cal: ")),
+                Err(e) => format!("error\t{e}"),
+            };
+            let dir = cli::state().join("fili-cal");
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = std::fs::write(dir.join("connect.txt"), note);
+        });
+    }
+
     pub fn sync_now(&self) {
-        // every subscription, due or not: a process of its own that waits for none
+        // every subscription and account, due or not: a process of its own that waits for none
         if let Ok(exe) = std::env::current_exe() {
-            for c in crate::calendars::list().iter().filter(|c| c.url.is_some()) {
+            for c in crate::calendars::list().iter().filter(|c| c.url.is_some() || c.caldav.is_some()) {
                 let _ = std::process::Command::new(&exe).args(["calendar", "sync", &c.slug]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
             }
         }
@@ -602,7 +645,9 @@ impl qobject::Agenda {
     }
 
     pub fn calendar_remove(mut self: Pin<&mut Self>, slug: &QString) -> bool {
-        self.calendar_done(crate::calendars::remove(&slug.to_string()))
+        let slug = slug.to_string();
+        crate::dav::forget_password(&slug);
+        self.calendar_done(crate::calendars::remove(&slug))
     }
 
     fn calendar_done(mut self: Pin<&mut Self>, result: Result<(), String>) -> bool {

@@ -69,7 +69,10 @@ rename and colour change are not in the journal, deleting a calendar goes to the
 
 **Status (2026-11-25): P3.1 done** (subscription = a calendar with `url` in `calendar.conf`; `curl` fetch started by `tick` in a process of
 its own; `ETag`/`Last-Modified`; the last good copy stays; read-only events; `calendar subscribe|sync`, "Refresh Subscriptions", Ctrl+R).
-Not done yet: P3.2 CalDAV, P3.3 import/export from the menu and drop, P3.4 handler of `text/calendar` and `webcal:`.
+P3.2 CalDAV done (own client in `src/dav.rs`, `curl` transport, password in the keyring, push then pull with ETags, server wins on
+conflict and the local copy goes to `<id>.conflict`, series with changed occurrences read-only; tried against `tests/fake-caldav.py`, not yet
+against Nextcloud, Fastmail or iCloud; Google needs OAuth and is not done: use its secret ICS link as a subscription).
+Not done yet: P3.3 import/export from the menu and drop, P3.4 handler of `text/calendar` and `webcal:`.
 
 1. **ICS subscriptions** (read-only): URL, refresh every N minutes by `fili-cal tick` (conditional requests with `ETag` / `Last-Modified`,
    an offline copy kept). This replaces the user-layer `cal-notify` / Proton plugin: the Proton private link becomes a

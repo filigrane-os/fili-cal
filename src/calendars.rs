@@ -20,6 +20,10 @@ pub struct Calendar {
     pub url: Option<String>,
     /// Minutes between two fetches of a subscription
     pub refresh: u32,
+    /// An account of a CalDAV server: the address of the calendar there. Its events are kept in step with the server.
+    pub caldav: Option<String>,
+    /// The user name of the account (the password is in the keyring)
+    pub user: String,
 }
 
 pub fn dir_of(slug: &str) -> PathBuf {
@@ -40,6 +44,8 @@ fn read_meta(slug: &str) -> Calendar {
         hidden: get("hidden").is_some_and(|h| h == "true"),
         url: get("url").filter(|u| !u.is_empty()),
         refresh: get("refresh").and_then(|r| r.parse().ok()).filter(|r| *r >= 5).unwrap_or(60),
+        caldav: get("caldav").filter(|u| !u.is_empty()),
+        user: get("user").unwrap_or_default(),
     }
 }
 
@@ -48,6 +54,9 @@ fn write_meta(c: &Calendar) -> Result<(), String> {
     let mut text = format!("name = {}\ncolor = {}\nhidden = {}\n", c.name.replace('\n', " "), c.color, c.hidden);
     if let Some(u) = &c.url {
         text += &format!("url = {}\nrefresh = {}\n", u.replace(['\n', '\r'], ""), c.refresh);
+    }
+    if let Some(u) = &c.caldav {
+        text += &format!("caldav = {}\nuser = {}\nrefresh = {}\n", u.replace(['\n', '\r'], ""), c.user.replace(['\n', '\r'], ""), c.refresh);
     }
     fs::write(dir_of(&c.slug).join("calendar.conf"), text).map_err(|e| e.to_string())
 }
@@ -62,7 +71,7 @@ fn migrate() {
     let target = dir_of(DEFAULT);
     let _ = fs::create_dir_all(&target);
     if !target.join("calendar.conf").exists() {
-        let _ = write_meta(&Calendar { slug: DEFAULT.into(), name: "Personal".into(), color: "default".into(), hidden: false, url: None, refresh: 60 });
+        let _ = write_meta(&Calendar { slug: DEFAULT.into(), name: "Personal".into(), color: "default".into(), hidden: false, url: None, refresh: 60, caldav: None, user: String::new() });
     }
     for p in flat {
         if let Some(name) = p.file_name() {
@@ -110,7 +119,7 @@ pub fn create(name: &str, color: &str) -> Result<Calendar, String> {
         n += 1;
     }
     let color = if TONES.contains(&color) { color } else { TONES[1 + list().len() % (TONES.len() - 1)] };
-    let c = Calendar { slug, name: name.to_string(), color: color.to_string(), hidden: false, url: None, refresh: 60 };
+    let c = Calendar { slug, name: name.to_string(), color: color.to_string(), hidden: false, url: None, refresh: 60, caldav: None, user: String::new() };
     write_meta(&c)?;
     Ok(c)
 }
@@ -168,6 +177,16 @@ pub fn subscribe(name: &str, url: &str, color: &str, refresh: Option<u32>) -> Re
     Ok(c)
 }
 
+/// A calendar of a CalDAV account: `collection` is its address on the server
+pub fn create_account(name: &str, collection: &str, user: &str) -> Result<Calendar, String> {
+    let mut c = create(name, "")?;
+    c.caldav = Some(collection.to_string());
+    c.user = user.to_string();
+    c.refresh = 15;
+    write_meta(&c)?;
+    Ok(c)
+}
+
 /// The calendar of a folder (slug), when it is a subscription
 pub fn subscription(slug: &str) -> Option<Calendar> {
     if !valid_slug(slug) {
@@ -176,13 +195,21 @@ pub fn subscription(slug: &str) -> Option<Calendar> {
     Some(read_meta(slug)).filter(|c| c.url.is_some())
 }
 
+/// The calendar of a folder (slug), when it belongs to a CalDAV account
+pub fn account(slug: &str) -> Option<Calendar> {
+    if !valid_slug(slug) {
+        return None;
+    }
+    Some(read_meta(slug)).filter(|c| c.caldav.is_some())
+}
+
 pub fn json() -> String {
     serde_json::Value::Array(
         list()
             .iter()
             .map(|c| {
                 let st = crate::subscribe::state(&c.slug);
-                serde_json::json!({"slug": c.slug, "name": c.name, "color": c.color, "hidden": c.hidden, "subscribed": c.url.is_some(),
+                serde_json::json!({"slug": c.slug, "name": c.name, "color": c.color, "hidden": c.hidden, "subscribed": c.url.is_some(), "account": c.caldav.is_some(),
                     "fetched": st.fetched, "error": st.error})
             })
             .collect(),

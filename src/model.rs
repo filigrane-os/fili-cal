@@ -60,6 +60,8 @@ pub fn events_json_of(all: &[(String, Event)], from: &str, to: &str) -> String {
     let mut rows: Vec<(NaiveDateTime, String, Value)> = Vec::new();
     // calendars that are hidden show nothing in the views (their alerts still ring)
     let cals = calendars::list();
+    // the events of an account that the server keeps in several parts cannot be written back
+    let locks: std::collections::HashMap<String, crate::dav::DavState> = cals.iter().filter(|c| c.caldav.is_some()).map(|c| (c.slug.clone(), crate::dav::load(&c.slug))).collect();
     for (id, e) in all {
         let slug = if e.calendar.is_empty() { calendars::DEFAULT } else { &e.calendar };
         let Some(cal) = cals.iter().find(|c| c.slug == slug) else { continue };
@@ -67,7 +69,7 @@ pub fn events_json_of(all: &[(String, Event)], from: &str, to: &str) -> String {
             continue;
         }
         for occ in ics::occurrences(e, from, to) {
-            rows.push((occ, e.summary.clone(), one(id, e, occ, &cal.color, cal.url.is_some())));
+            rows.push((occ, e.summary.clone(), one(id, e, occ, &cal.color, cal.url.is_some() || locks.get(&cal.slug).is_some_and(|st| crate::dav::locked(st, id)))));
         }
     }
     rows.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));

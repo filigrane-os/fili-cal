@@ -78,6 +78,11 @@
       "keys": "Ctrl+R"
     },
     {
+      "name": "add-account",
+      "label": "Add Account…",
+      "keys": "Ctrl+Alt+A"
+    },
+    {
       "name": "new-calendar",
       "label": "New Calendar…",
       "keys": "Ctrl+Alt+N"

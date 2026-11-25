@@ -11,6 +11,7 @@ FiliDialog {
     property string slug: ""
     property string color: "default"
     property bool subscribed: false
+    property bool account: false
     readonly property bool isNew: slug === ""
     readonly property var tones: ["default", "voile", "ardoise", "sauge", "sable", "cendre", "brume"]
     property string status: ""
@@ -36,8 +37,9 @@ FiliDialog {
         slug = c.slug;
         color = c.color;
         urlField.text = "";
-        status = !c.subscribed ? "" : c.error !== "" ? Fili.tr("Last fetch failed: %1").replace("%1", c.error) : c.fetched > 0 ? Fili.tr("Updated %1").replace("%1", new Date(c.fetched * 1000).toLocaleString(Qt.locale(), Locale.ShortFormat)) : Fili.tr("Not fetched yet");
+        status = !(c.subscribed || c.account) ? "" : c.error !== "" ? Fili.tr("Last fetch failed: %1").replace("%1", c.error) : c.fetched > 0 ? Fili.tr("Updated %1").replace("%1", new Date(c.fetched * 1000).toLocaleString(Qt.locale(), Locale.ShortFormat)) : Fili.tr("Not fetched yet");
         subscribed = c.subscribed;
+        account = c.account;
         nameField.text = c.name;
         open();
         nameField.focusField();
@@ -87,7 +89,7 @@ FiliDialog {
     Row {
         visible: !dlg.isNew && dlg.slug !== "personal"
         spacing: FiliTheme.space2
-        FiliButton { visible: dlg.subscribed; label: Fili.tr("Refresh now"); onClicked: { dlg.close(); dlg.refreshRequested(); } }
+        FiliButton { visible: dlg.subscribed || dlg.account; label: Fili.tr("Refresh now"); onClicked: { dlg.close(); dlg.refreshRequested(); } }
         FiliButton { label: Fili.tr("Delete calendar"); onClicked: { dlg.close(); dlg.deleted(dlg.slug); } }
     }
 }

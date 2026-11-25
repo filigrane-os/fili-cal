@@ -200,7 +200,8 @@ ApplicationWindow {
         "new-event": { on: () => !win.typing, run: () => win.newEvent() },
         "undo": { on: () => !win.typing && JSON.parse(cal.undoState()).undo, run: () => { cal.undo(); soon.refresh(); } },
         "redo": { on: () => !win.typing && JSON.parse(cal.undoState()).redo, run: () => { cal.redo(); soon.refresh(); } },
-        "refresh-calendars": { on: () => win.calendars.some(c => c.subscribed), run: () => { cal.syncNow(); } },
+        "refresh-calendars": { on: () => win.calendars.some(c => c.subscribed || c.account), run: () => { cal.syncNow(); } },
+        "add-account": { on: () => !win.typing, run: () => accountDialog.start() },
         "new-calendar": { on: () => !win.typing, run: () => calendarDialog.create() },
         "quick-add": { on: () => !win.typing, run: () => quick.start() },
         "settings": { on: () => true, run: () => Fili.openSettings() },
@@ -245,6 +246,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+W"; onActivated: win.quit() }
     Shortcut { sequence: "Ctrl+Q"; onActivated: win.quit() }
     Shortcut { sequence: "Ctrl+N"; enabled: !win.typing; onActivated: win.runAction("new-event") }
+    Shortcut { sequence: "Ctrl+Alt+A"; enabled: !win.typing; onActivated: win.runAction("add-account") }
     Shortcut { sequence: "Ctrl+R"; enabled: !win.typing; onActivated: win.runAction("refresh-calendars") }
     Shortcut { sequence: "Ctrl+Alt+N"; enabled: !win.typing; onActivated: win.runAction("new-calendar") }
     Shortcut { sequence: "Ctrl+Shift+N"; enabled: !win.typing; onActivated: win.runAction("quick-add") }
@@ -443,6 +445,20 @@ ApplicationWindow {
                 }
                 Text {
                     x: FiliTheme.margin
+                    text: Fili.tr("Add account…")
+                    font.family: FiliTheme.font
+                    font.pixelSize: FiliTheme.sizeSmall
+                    color: FiliTheme.muted
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -4
+                        onClicked: accountDialog.start()
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: Fili.tr("Add account…")
+                }
+                Text {
+                    x: FiliTheme.margin
                     text: Fili.tr("New calendar…")
                     font.family: FiliTheme.font
                     font.pixelSize: FiliTheme.sizeSmall
@@ -632,6 +648,10 @@ ApplicationWindow {
             }
         }
 
+        AccountDialog {
+            id: accountDialog
+            onConnect: (address, user, password) => cal.accountConnect(address, user, password)
+        }
         CalendarDialog {
             id: calendarDialog
             tools: tools

@@ -21,6 +21,8 @@ pub struct State {
     /// Epoch of the last successful check (0 = never)
     pub fetched: i64,
     pub error: String,
+    /// Epoch of the last attempt, failed or not
+    pub tried: i64,
 }
 
 fn state_path(slug: &str) -> PathBuf {
@@ -30,11 +32,11 @@ fn state_path(slug: &str) -> PathBuf {
 pub fn state(slug: &str) -> State {
     let v: Value = fs::read_to_string(state_path(slug)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(Value::Null);
     let text = |k: &str| v[k].as_str().unwrap_or("").to_string();
-    State { etag: text("etag"), modified: text("modified"), fetched: v["fetched"].as_i64().unwrap_or(0), error: text("error") }
+    State { etag: text("etag"), modified: text("modified"), fetched: v["fetched"].as_i64().unwrap_or(0), error: text("error"), tried: v["tried"].as_i64().unwrap_or(0) }
 }
 
 fn save_state(slug: &str, s: &State) {
-    let _ = fs::write(state_path(slug), json!({"etag": s.etag, "modified": s.modified, "fetched": s.fetched, "error": s.error}).to_string());
+    let _ = fs::write(state_path(slug), json!({"etag": s.etag, "modified": s.modified, "fetched": s.fetched, "error": s.error, "tried": s.tried}).to_string());
 }
 
 fn now() -> i64 {
@@ -44,7 +46,12 @@ fn now() -> i64 {
 /// Is a fetch due: never done, or older than the refresh time (a failed one counts as made 5 minutes before it is due)
 pub fn due(c: &calendars::Calendar) -> bool {
     let st = state(&c.slug);
-    c.url.is_some() && (st.fetched == 0 || now() - st.fetched >= i64::from(c.refresh) * 60)
+    let time = st.fetched == 0 || now() - st.fetched >= i64::from(c.refresh) * 60;
+    if c.url.is_some() {
+        return time;
+    }
+    // an account is also synced soon after a change made here (not more than once a minute)
+    c.caldav.is_some() && (time || (crate::dav::dirty(&c.slug) && now() - st.tried >= 60))
 }
 
 /// The header value of a curl dump (`-D`), the last response (after redirects)
@@ -111,7 +118,10 @@ pub fn store_events(slug: &str, text: &str) -> Result<usize, String> {
 
 /// Fetches one subscription now. Ok(Some(n)) = n events stored, Ok(None) = nothing changed since the last time.
 pub fn sync(c: &calendars::Calendar) -> Result<Option<usize>, String> {
-    let url = c.url.as_deref().ok_or_else(|| crate::i18n::tr("this calendar is not a subscription").to_string())?;
+    if let Some(collection) = &c.caldav {
+        return sync_account(c, collection);
+    }
+    let url = c.url.as_deref().ok_or_else(|| crate::i18n::tr("this calendar is not a subscription or an account").to_string())?;
     let mut st = state(&c.slug);
     let result = fetch(url, &st).and_then(|(code, dump, body)| match code {
         304 => Ok(None),
@@ -136,6 +146,24 @@ pub fn sync(c: &calendars::Calendar) -> Result<Option<usize>, String> {
     }
     save_state(&c.slug, &st);
     result
+}
+
+fn sync_account(c: &calendars::Calendar, collection: &str) -> Result<Option<usize>, String> {
+    let mut st = state(&c.slug);
+    st.tried = now();
+    let result = crate::dav::password(&c.slug).and_then(|pw| crate::dav::sync(&crate::dav::Curl::new(&c.user, &pw), &c.slug, collection));
+    match &result {
+        Ok(_) => {
+            st.fetched = now();
+            st.error.clear();
+        }
+        Err(e) => {
+            st.error.clone_from(e);
+            st.fetched = now() - i64::from(c.refresh) * 60 + 300;
+        }
+    }
+    save_state(&c.slug, &st);
+    result.map(|s| if s == crate::dav::Stats::default() { None } else { Some(s.pushed + s.pulled + s.removed) })
 }
 
 /// `fili-cal calendar sync [NAME]`: the one named (always), or every subscription that is due

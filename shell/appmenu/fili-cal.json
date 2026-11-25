@@ -49,6 +49,11 @@
      "keys": "Ctrl+Alt+N"
     },
     {
+     "label": "Add Account\u2026",
+     "exec": "fili-cal ctl --pid %pid action add-account",
+     "keys": "Ctrl+Alt+A"
+    },
+    {
      "label": "Refresh Subscriptions",
      "exec": "fili-cal ctl --pid %pid action refresh-calendars",
      "keys": "Ctrl+R"
