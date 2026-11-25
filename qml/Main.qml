@@ -871,7 +871,7 @@ ApplicationWindow {
             onActivated: id => {
                 const ev = win.ctxEvent;
                 if (id === "join" && ev) cal.joinUrl(ev.join);
-                else if (id === "edit" && ev) editor.edit(ev);
+                else if (id === "edit" && ev) editor.edit(ev, true);
                 else if (id === "duplicate" && ev) win.duplicateEvent(ev);
                 else if (id === "copy" && ev) win.copyEvent(ev);
                 else if (id === "done" && ev) win.toggleDone(ev);

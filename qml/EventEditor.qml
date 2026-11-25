@@ -33,13 +33,17 @@ FiliDialog {
     // Alerts beyond the first one are kept; the choice below changes the first one
     property var alertsRest: []
     readonly property bool isNew: eventId === ""
+    // The event is shown first, not editable; the Edit button switches to the form (a new event opens on the form)
+    property bool editing: false
+    readonly property bool viewing: !isNew && !editing
     // Duration kept when the start moves: the end is "start + length" until the user types one
     property bool allDay: false
 
     title: isNew ? Fili.tr("New event") : Fili.tr("Event")
-    confirmLabel: Fili.tr("Save")
+    confirmLabel: viewing ? Fili.tr("Edit") : Fili.tr("Save")
+    cancelLabel: viewing ? Fili.tr("Close") : ""
     cardWidth: 460
-    confirmEnabled: !readOnly && titleField.text.trim() !== "" && startOk && endOk && lastOk && zoneOk
+    confirmEnabled: viewing ? !readOnly : !readOnly && titleField.text.trim() !== "" && startOk && endOk && lastOk && zoneOk
     readonly property bool dateOk: /^\d{4}-\d{2}-\d{2}$/.test(dateField.text) && !isNaN(tools.parse(dateField.text).getTime())
     readonly property bool timeOk: /^([01]\d|2[0-3]):[0-5]\d$/.test(startField.text)
     readonly property bool startOk: dateOk && (allDay || timeOk)
@@ -60,7 +64,9 @@ FiliDialog {
     property string every: ""
     property int alert: 600
 
-    function edit(ev) {
+    // `directly`: open on the form (the Edit entry of the context menu) instead of on the view
+    function edit(ev, directly) {
+        editing = directly === true;
         eventId = ev.id;
         occ = ev.occ;
         calendar = ev.calendar;
@@ -90,10 +96,12 @@ FiliDialog {
         every = ev.every;
         alert = ev.alarms.length > 0 ? ev.alarms[0] : -1;
         open();
-        titleField.focusField();
+        if (editing)
+            titleField.focusField();
     }
     // `date` is the start (midnight = a whole day); `until` the end when it was dragged out
     function create(date, until) {
+        editing = true;
         eventId = "";
         occ = "";
         first = "";
@@ -140,6 +148,13 @@ FiliDialog {
         lastField.text = tools.iso(last);
     }
     onAccepted: {
+        // On the view, the main button is Edit: the dialog stays, on the form
+        if (viewing) {
+            editing = true;
+            open();
+            titleField.focusField();
+            return;
+        }
         // A series keeps its own first day: it moves by the days this occurrence was moved
         let day = dateField.text;
         if (series && first !== "") {
@@ -176,7 +191,7 @@ FiliDialog {
     }
 
     Text {
-        visible: ed.readOnly
+        visible: ed.readOnly && !ed.viewing
         width: parent.width
         wrapMode: Text.WordWrap
         text: Fili.tr("This event comes from a subscription: it cannot be changed here.")
@@ -184,43 +199,152 @@ FiliDialog {
         font.pixelSize: FiliTheme.sizeSmall
         color: FiliTheme.muted
     }
-    FiliTextField { id: titleField; width: parent.width; placeholder: Fili.tr("Title"); onAccepted: ed.accept() }
+    // ---- The event, to read: what it is, when, where, the meeting to join; Edit switches to the form ----
+    readonly property string whenLine: {
+        const L = Qt.locale(), d = tools.parse(dateField.text);
+        if (isNaN(d.getTime()))
+            return "";
+        const day = L.toString(d, "dddd d MMMM yyyy");
+        if (allDay) {
+            const last = tools.parse(lastField.text);
+            return !isNaN(last.getTime()) && last > d ? day + " → " + L.toString(last, "dddd d MMMM yyyy") : day;
+        }
+        const hm = t => { const m = /^(\d\d):(\d\d)$/.exec(t); return m ? tools.hhmm(+m[1], +m[2]) : t; };
+        return day + ", " + hm(startField.text) + (endField.text !== "" ? " – " + hm(endField.text) : "") + (zoneField.text.trim() !== "" ? " (" + zoneField.text.trim() + ")" : "");
+    }
+    readonly property string repeatLine: custom ? Fili.tr("Custom rule") : (repeats.find(r => r.value === every && every !== "") || { label: "" }).label
+    readonly property string alertLine: alert < 0 ? "" : (alerts.find(a => a.value === alert) || { label: "" }).label + (alertsRest.length > 0 ? " " + Fili.tr("and %1 more alerts, kept").replace("%1", alertsRest.length) : "")
+    // The notes without the meeting link (it is the button above)
+    readonly property string notesShown: (join !== "" ? noteField.text.split("<" + join + ">").join("").split(join).join("") : noteField.text).trim()
+    readonly property string calendarName: (calendars.find(c => c.slug === calendar) || { name: "" }).name
+    Column {
+        visible: ed.viewing
+        width: parent.width
+        spacing: FiliTheme.space2
+        Text {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: titleField.text
+            font.family: FiliTheme.font
+            font.pixelSize: FiliTheme.sizeTitle
+            font.weight: FiliTheme.weightAccent
+            font.strikeout: ed.done
+            color: FiliTheme.text
+        }
+        Text {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: ed.whenLine
+            font.family: FiliTheme.font
+            font.pixelSize: FiliTheme.size
+            color: FiliTheme.text
+        }
+        Text {
+            visible: ed.repeatLine !== "" || ed.alertLine !== ""
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: [ed.repeatLine, ed.alertLine !== "" ? Fili.tr("Alert") + ": " + ed.alertLine : ""].filter(t => t !== "").join(" · ")
+            font.family: FiliTheme.font
+            font.pixelSize: FiliTheme.sizeSmall
+            color: FiliTheme.muted
+        }
+        JoinButton { tools: ed.tools; url: ed.join; service: ed.joinService; labelled: true; onClicked: ed.joinRequested(ed.join) }
+        Text {
+            visible: placeField.text !== "" && placeField.text !== ed.join
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: "📍 " + placeField.text
+            font.family: FiliTheme.font
+            font.pixelSize: FiliTheme.size
+            color: FiliTheme.text
+        }
+        // The notes can be long (the text of a Teams invitation): a window of their own
+        Flickable {
+            visible: ed.notesShown !== ""
+            width: parent.width
+            height: Math.min(noteText.implicitHeight, 150)
+            contentHeight: noteText.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            Text {
+                id: noteText
+                width: parent.width
+                wrapMode: Text.Wrap
+                text: ed.notesShown
+                font.family: FiliTheme.font
+                font.pixelSize: FiliTheme.size
+                color: FiliTheme.textSecondary
+            }
+        }
+        Row {
+            visible: ed.calendarName !== ""
+            spacing: FiliTheme.space2
+            Rectangle { anchors.verticalCenter: parent.verticalCenter; width: 10; height: 10; radius: 3; color: ed.tools.colorOf({ color: (ed.calendars.find(c => c.slug === ed.calendar) || { color: "default" }).color }) }
+            Text { text: ed.calendarName; font.family: FiliTheme.font; font.pixelSize: FiliTheme.sizeSmall; color: FiliTheme.muted }
+        }
+        Repeater {
+            model: ed.viewing ? ed.attachments : []
+            Text {
+                required property string modelData
+                width: parent.width
+                elide: Text.ElideMiddle
+                text: "📎 " + modelData.split("/").pop()
+                font.family: FiliTheme.font
+                font.pixelSize: FiliTheme.size
+                color: viewAtt.containsMouse ? FiliTheme.accentColor : FiliTheme.text
+                MouseArea { id: viewAtt; anchors.fill: parent; hoverEnabled: true; onClicked: Fili.openPath(modelData) }
+            }
+        }
+        Text {
+            visible: ed.readOnly
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: Fili.tr("This event comes from a subscription: it cannot be changed here.")
+            font.family: FiliTheme.font
+            font.pixelSize: FiliTheme.sizeSmall
+            color: FiliTheme.muted
+        }
+    }
+    FiliTextField { visible: !ed.viewing; id: titleField; width: parent.width; placeholder: Fili.tr("Title"); onAccepted: ed.accept() }
     Row2 {
+        visible: !ed.viewing
         label: Fili.tr("All day")
         FiliSwitch { anchors.verticalCenter: parent.verticalCenter; checked: ed.allDay; onToggled: ed.allDay = !ed.allDay }
     }
     Row2 {
+        visible: !ed.viewing
         label: Fili.tr("Date")
         FiliTextField { id: dateField; width: 120; placeholder: "2026-12-24"; error: !ed.dateOk && text !== ""; onAccepted: ed.accept() }
     }
     Row2 {
-        visible: ed.allDay
+        visible: !ed.viewing && (ed.allDay)
         label: Fili.tr("Last day")
         FiliTextField { id: lastField; width: 120; placeholder: "2026-12-26"; error: !ed.lastOk; onAccepted: ed.accept() }
     }
     Row2 {
-        visible: !ed.allDay
+        visible: !ed.viewing && (!ed.allDay)
         label: Fili.tr("Time")
         FiliTextField { id: startField; width: 70; placeholder: "14:30"; error: !ed.timeOk && text !== ""; onAccepted: ed.accept() }
         Text { height: 26; verticalAlignment: Text.AlignVCenter; text: "→"; font.family: FiliTheme.font; font.pixelSize: FiliTheme.size; color: FiliTheme.muted }
         FiliTextField { id: endField; width: 70; placeholder: "15:30"; error: !ed.endOk; onAccepted: ed.accept() }
     }
     Row2 {
-        visible: !ed.allDay
+        visible: !ed.viewing && (!ed.allDay)
         label: Fili.tr("Time zone")
         FiliTextField { id: zoneField; width: 200; placeholder: Fili.tr("Same hour everywhere"); error: !ed.zoneOk; onAccepted: ed.accept() }
     }
     Row2 {
-        visible: ed.calendars.length > 1
+        visible: !ed.viewing && (ed.calendars.length > 1)
         label: Fili.tr("Calendar")
         FiliSelect { width: 200; model: ed.calendars.filter(c => !c.subscribed || c.slug === ed.calendar).map(c => ({ label: c.name, value: c.slug })); current: ed.calendar; onPicked: v => ed.calendar = v }
     }
     Row2 {
+        visible: !ed.viewing
         label: Fili.tr("Repeat")
         FiliSelect { width: 200; model: ed.repeats; current: ed.every; onPicked: v => ed.every = v }
     }
     Text {
-        visible: ed.custom && ed.every !== ""
+        visible: !ed.viewing && (ed.custom && ed.every !== "")
         width: parent.width
         elide: Text.ElideRight
         text: Fili.tr("Custom rule, kept as it is: %1").replace("%1", ed.rrule)
@@ -229,11 +353,12 @@ FiliDialog {
         color: FiliTheme.muted
     }
     Row2 {
+        visible: !ed.viewing
         label: Fili.tr("Alert")
         FiliSelect { width: 200; model: ed.alerts; current: ed.alert; onPicked: v => ed.alert = v }
     }
     Text {
-        visible: ed.alertsRest.length > 0 && ed.alert >= 0
+        visible: !ed.viewing && (ed.alertsRest.length > 0 && ed.alert >= 0)
         width: parent.width
         elide: Text.ElideRight
         text: Fili.tr("and %1 more alerts, kept").replace("%1", ed.alertsRest.length)
@@ -242,25 +367,28 @@ FiliDialog {
         color: FiliTheme.muted
     }
     Row2 {
-        visible: ed.allDay && !ed.isNew
+        visible: !ed.viewing && (ed.allDay && !ed.isNew)
         label: Fili.tr("Status")
         FiliCheckBox { checked: ed.done; label: Fili.tr("Done"); onToggled: ed.done = !ed.done }
     }
     Row2 {
-        visible: ed.join !== ""
+        visible: !ed.viewing && (ed.join !== "")
         label: Fili.tr("Meeting")
         JoinButton { tools: ed.tools; url: ed.join; service: ed.joinService; labelled: true; onClicked: ed.joinRequested(ed.join) }
     }
     Row2 {
+        visible: !ed.viewing
         label: Fili.tr("Place")
         FiliTextField { id: placeField; width: ed.cardWidth - 2 * FiliTheme.space5 - 84 - FiliTheme.space3; placeholder: Fili.tr("Where"); onAccepted: ed.accept() }
     }
     Row2 {
+        visible: !ed.viewing
         label: Fili.tr("Notes")
         FiliTextField { id: noteField; width: ed.cardWidth - 2 * FiliTheme.space5 - 84 - FiliTheme.space3; placeholder: Fili.tr("Notes"); onAccepted: ed.accept() }
     }
     // Attached files: drop one on this card; a click opens it with the application of the user
     Column {
+        visible: !ed.viewing
         width: parent.width
         spacing: 2
         Text {
@@ -301,7 +429,7 @@ FiliDialog {
         }
     }
     Row {
-        visible: !ed.isNew && !ed.readOnly
+        visible: !ed.viewing && (!ed.isNew && !ed.readOnly)
         spacing: FiliTheme.space2
         FiliButton { label: ed.series ? Fili.tr("Delete this occurrence") : Fili.tr("Delete"); onClicked: { ed.close(); ed.deleted(ed.eventId, ed.occ, false); } }
         FiliButton { visible: ed.series; label: Fili.tr("Delete the series"); onClicked: { ed.close(); ed.deleted(ed.eventId, ed.occ, true); } }
