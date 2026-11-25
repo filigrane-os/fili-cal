@@ -21,11 +21,13 @@ Rectangle {
     radius: 10
     color: area.pressed ? Qt.darker(tone, 1.2) : area.containsMouse ? Qt.lighter(tone, 1.15) : tone
     Shape {
-        x: 4
-        y: 3
+        // The camera is 20.5 x 12 on the 24 grid: scaled to leave 4 px at the sides and 3 above and below, centred on the badge
+        readonly property real k: b.labelled ? 0.68 : Math.min((b.width - 8) / 20.5, (b.height - 6) / 12)
+        x: (b.labelled ? 11 : b.width / 2) - 12.25 * k
+        y: b.height / 2 - 12 * k
         width: 24
         height: 24
-        scale: 14 / 24
+        scale: k
         transformOrigin: Item.TopLeft
         preferredRendererType: Shape.CurveRenderer
         ShapePath {

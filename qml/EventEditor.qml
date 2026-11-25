@@ -43,9 +43,22 @@ FiliDialog {
     // Duration kept when the start moves: the end is "start + length" until the user types one
     property bool allDay: false
 
-    // On the card the title and the cross are drawn below, and so are the buttons (Join before Edit, no Edit on an event that cannot change)
-    title: viewing ? "" : isNew ? Fili.tr("New event") : Fili.tr("Event")
-    showButtons: !viewing
+    // The card has the title and the cross of the kit; its buttons are Join (one per service), then Edit when the event can change
+    title: isNew ? Fili.tr("New event") : Fili.tr("Event")
+    showCancel: !viewing
+    showConfirm: !viewing
+    actions: [
+        Repeater {
+            model: ed.viewing ? ed.joins : []
+            FiliButton { required property var modelData; label: Fili.tr("Join %1").replace("%1", modelData.service); primary: true; onClicked: ed.joinRequested(modelData.url) }
+        },
+        FiliButton {
+            visible: ed.viewing && !ed.readOnly
+            label: Fili.tr("Edit")
+            primary: ed.joins.length === 0
+            onClicked: { ed.editing = true; titleField.focusField(); }
+        }
+    ]
     confirmLabel: Fili.tr("Save")
     cardWidth: 460
     confirmEnabled: !readOnly && titleField.text.trim() !== "" && startOk && endOk && lastOk && zoneOk
@@ -263,26 +276,6 @@ FiliDialog {
         visible: ed.viewing
         width: parent.width
         spacing: FiliTheme.space2
-        // The header: what this is, and the cross that closes it
-        Item {
-            width: parent.width
-            height: 22
-            Text {
-                anchors { left: parent.left; verticalCenter: parent.verticalCenter }
-                text: Fili.tr("Event")
-                font.family: FiliTheme.font
-                font.pixelSize: FiliTheme.size
-                font.weight: FiliTheme.weightAccent
-                color: FiliTheme.text
-            }
-            FiliIconButton {
-                anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                name: "x"
-                iconSize: 14
-                tip: Fili.tr("Close")
-                onClicked: ed.close()
-            }
-        }
         Text {
             width: parent.width
             wrapMode: Text.WordWrap
@@ -373,21 +366,6 @@ FiliDialog {
             font.pixelSize: FiliTheme.sizeSmall
             color: FiliTheme.muted
         }
-        // The meetings to join (a button for each service), then Edit when the event can change
-        Row {
-            anchors.right: parent.right
-            spacing: FiliTheme.space2
-            Repeater {
-                model: ed.joins
-                FiliButton { required property var modelData; label: Fili.tr("Join %1").replace("%1", modelData.service); primary: true; onClicked: ed.joinRequested(modelData.url) }
-            }
-            FiliButton {
-                visible: !ed.readOnly
-                label: Fili.tr("Edit")
-                primary: ed.joins.length === 0
-                onClicked: { ed.editing = true; titleField.focusField(); }
-            }
-        }
     }
     FiliTextField { visible: !ed.viewing; id: titleField; width: parent.width; placeholder: Fili.tr("Title"); onAccepted: ed.accept() }
     Row2 {
@@ -462,7 +440,7 @@ FiliDialog {
                 font.pixelSize: FiliTheme.size
                 color: FiliTheme.muted
             }
-            FiliButton { label: "+  " + Fili.tr("Add an alert"); onClicked: ed.addAlert() }
+            FiliButton { label: Fili.tr("Add an alert"); iconName: "plus"; onClicked: ed.addAlert() }
         }
     }
     Row2 {

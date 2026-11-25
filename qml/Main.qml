@@ -493,18 +493,13 @@ ApplicationWindow {
                 Accessible.role: Accessible.Button
                 Accessible.name: Fili.tr("Close window")
             }
-            Rectangle {
+            FiliWindowButton {
                 id: windowButton
                 visible: win.windowButtons
+                panel: windowPanel
                 anchors { right: closeButton.left; rightMargin: FiliTheme.space1; verticalCenter: parent.verticalCenter }
-                width: 28
-                height: 24
-                radius: FiliTheme.radiusControl
-                color: windowArea.pressed || windowArea.containsMouse || windowPanel.visible ? (win.attending ? win.tintHover : windowArea.pressed ? FiliTheme.surfaceActive : FiliTheme.surfaceHover) : "transparent"
-                WindowGlyph { anchors.centerIn: parent; kind: "window"; width: 16; height: 16; color: win.attending ? win.onAccent : FiliTheme.text }
-                MouseArea { id: windowArea; anchors.fill: parent; hoverEnabled: true; onClicked: windowPanel.visible ? windowPanel.close() : windowPanel.open() }
-                Accessible.role: Accessible.Button
-                Accessible.name: Fili.tr("Window")
+                ink: win.attending ? win.onAccent : FiliTheme.text
+                hoverColor: win.attending ? win.tintHover : FiliTheme.hoverFill
             }
             FiliLiaButton {
                 id: liaButton
@@ -515,7 +510,8 @@ ApplicationWindow {
             FiliButton {
                 id: addButton
                 anchors { right: liaButton.visible ? liaButton.left : windowButton.visible ? windowButton.left : closeButton.visible ? closeButton.left : parent.right; rightMargin: liaButton.visible || windowButton.visible || closeButton.visible ? FiliTheme.space3 : FiliTheme.margin; verticalCenter: parent.verticalCenter }
-                label: "+  " + Fili.tr("New")
+                label: Fili.tr("New")
+                iconName: "plus"
                 primary: true
                 onClicked: quick.start()
             }
@@ -647,7 +643,7 @@ ApplicationWindow {
                         }
                         Rectangle { x: FiliTheme.margin; y: 8; width: 3; height: 24; radius: 1.5; color: tools.colorOf(soonRow.modelData) }
                         Column {
-                            anchors { left: parent.left; leftMargin: FiliTheme.margin + 10; right: parent.right; rightMargin: FiliTheme.space3; verticalCenter: parent.verticalCenter }
+                            anchors { left: parent.left; leftMargin: FiliTheme.margin + 10; right: parent.right; rightMargin: soonRow.modelData.join ? FiliTheme.space3 + 22 + FiliTheme.space2 : FiliTheme.space3; verticalCenter: parent.verticalCenter }
                             Text { width: parent.width; text: soonRow.modelData.title; elide: Text.ElideRight; font.family: FiliTheme.font; font.pixelSize: FiliTheme.sizeList; color: FiliTheme.text }
                             Text { width: parent.width; text: win.whenText(soonRow.modelData) + (soonRow.modelData.place ? " · " + soonRow.modelData.place : ""); elide: Text.ElideRight; font.family: FiliTheme.font; font.pixelSize: FiliTheme.sizeSmall; color: FiliTheme.muted }
                         }

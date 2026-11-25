@@ -158,15 +158,15 @@ Item {
                             service: chip.modelData.joinService || ""
                             tone: chip.tone
                             visible: url !== "" && v.cellW > 90
-                            width: 18
-                            height: 14
-                            radius: 7
-                            anchors { right: parent.right; rightMargin: 1; verticalCenter: parent.verticalCenter }
+                            width: 24
+                            height: 16
+                            radius: 8
+                            anchors { right: parent.right; rightMargin: 3; verticalCenter: parent.verticalCenter }
                             z: 5
                             onClicked: v.joinRequested(chip.modelData)
                         }
                         Text {
-                            anchors { left: parent.left; leftMargin: chip.whole ? 5 : 8; right: parent.right; rightMargin: chip.modelData.join ? 22 : 4; verticalCenter: parent.verticalCenter }
+                            anchors { left: parent.left; leftMargin: chip.whole ? 5 : 8; right: parent.right; rightMargin: chip.modelData.join ? 30 : 4; verticalCenter: parent.verticalCenter }
                             text: (chip.whole ? "" : v.tools.clock(chip.modelData) + " ") + chip.modelData.title
                             font.strikeout: chip.modelData.done === true
                             elide: Text.ElideRight
