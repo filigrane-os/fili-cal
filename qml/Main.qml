@@ -101,6 +101,24 @@ ApplicationWindow {
         return ev.allDay ? day : day + "  " + tools.clock(ev);
     }
     function newEvent(at) { editor.create(at ?? (viewMode === "month" ? anchor : new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), Math.min(23, Math.max(9, now.getHours() + 1)), 0))); }
+    // A block moved or resized in the week: its start and end move by `dStart` and `dEnd` minutes. A series moves from the
+    // occurrence that was dragged (its first start moves by as much); Alt makes a copy that is a single event.
+    function changeEvent(ev, dStart, dEnd, copy) {
+        const shift = (d, n) => { const r = new Date(d); r.setMinutes(r.getMinutes() + n); return r; };
+        const occ = tools.start(ev), newStart = shift(occ, dStart);
+        const newEnd = ev.end ? shift(tools.parse(ev.end), dEnd) : null;
+        if (copy) {
+            cal.add(JSON.stringify({ title: ev.title, allDay: false, start: tools.stamp(newStart), end: newEnd ? tools.stamp(newEnd) : "", place: ev.place, note: ev.note, alarms: ev.alarms }));
+            soon.refresh();
+            return;
+        }
+        const first = ev.series ? shift(tools.parse(ev.first), dStart) : newStart;
+        const o = { start: tools.stamp(first) };
+        if (newEnd)
+            o.end = tools.stamp(shift(first, Math.round((newEnd - newStart) / 60000)));
+        cal.update(ev.id, JSON.stringify(o));
+        soon.refresh();
+    }
     function applySaved(id, json) {
         if (id === "")
             cal.add(json);
@@ -420,6 +438,8 @@ ApplicationWindow {
                 now: win.now
                 onSlotActivated: at => win.newEvent(at)
                 onEventClicked: ev => editor.edit(ev)
+                onRangeCreated: (start, end) => editor.create(start, end)
+                onEventChanged: (ev, dStart, dEnd, copy) => win.changeEvent(ev, dStart, dEnd, copy)
             }
         }
 

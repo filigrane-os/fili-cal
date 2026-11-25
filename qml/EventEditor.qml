@@ -74,7 +74,8 @@ FiliDialog {
         open();
         titleField.focusField();
     }
-    function create(date) {
+    // `date` is the start (midnight = a whole day); `until` the end when it was dragged out
+    function create(date, until) {
         eventId = "";
         occ = "";
         first = "";
@@ -84,14 +85,17 @@ FiliDialog {
         rrule = "";
         alertsRest = [];
         zoneField.text = "";
-        allDay = date.getHours() === 0 && date.getMinutes() === 0;
+        allDay = !until && date.getHours() === 0 && date.getMinutes() === 0;
         titleField.text = "";
         dateField.text = tools.iso(date);
         lastField.text = tools.iso(date);
         const h = allDay ? 9 : date.getHours(), m = allDay ? 0 : date.getMinutes();
         startField.text = tools.pad(h) + ":" + tools.pad(m);
         const len = tools.prefs.defaultLength, eh = Math.min(23, h + Math.floor((m + len) / 60));
-        endField.text = tools.pad(eh) + ":" + tools.pad(eh === h + Math.floor((m + len) / 60) ? (m + len) % 60 : 59);
+        if (until)
+            endField.text = tools.pad(until.getHours()) + ":" + tools.pad(until.getMinutes());
+        else
+            endField.text = tools.pad(eh) + ":" + tools.pad(eh === h + Math.floor((m + len) / 60) ? (m + len) % 60 : 59);
         placeField.text = "";
         noteField.text = "";
         every = "";
