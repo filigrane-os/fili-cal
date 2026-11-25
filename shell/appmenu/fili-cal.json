@@ -93,6 +93,14 @@
      "label": "Redo",
      "exec": "fili-cal ctl --pid %pid action redo",
      "keys": "Ctrl+Shift+Z"
+    },
+    {
+     "sep": true
+    },
+    {
+     "label": "Search\u2026",
+     "exec": "fili-cal ctl --pid %pid action search",
+     "keys": "Ctrl+F"
     }
    ]
   },
@@ -113,6 +121,16 @@
      "label": "Month",
      "exec": "fili-cal ctl --pid %pid action view-month",
      "keys": "Ctrl+3"
+    },
+    {
+     "label": "Year",
+     "exec": "fili-cal ctl --pid %pid action view-year",
+     "keys": "Ctrl+4"
+    },
+    {
+     "label": "List",
+     "exec": "fili-cal ctl --pid %pid action view-list",
+     "keys": "Ctrl+5"
     },
     {
      "sep": true

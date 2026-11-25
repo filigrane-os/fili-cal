@@ -18,6 +18,17 @@ Item {
     signal dayClicked(date d)
     signal dayActivated(date d)
     signal eventClicked(var ev)
+    // A bar dragged to another day (`dDays` days later or earlier, Alt copies); days dragged over empty cells make a whole-day event
+    signal eventMoved(var ev, int dDays, bool copy)
+    signal daysCreated(date first, date last)
+    // The cell under a dragged bar, and the range of cells dragged over (indexes of the 42 cells, -1 = none)
+    property int dropIndex: -1
+    property int rangeFrom: -1
+    property int rangeTo: -1
+    function indexAt(x, y) {
+        return Math.max(0, Math.min(5, Math.floor((y - headH) / cellH))) * 7 + Math.max(0, Math.min(6, Math.floor(x / cellW)));
+    }
+    function reset() { dropIndex = -1; rangeFrom = -1; rangeTo = -1; }
 
     // Weekday names
     Row {
@@ -58,7 +69,8 @@ Item {
             y: v.headH + Math.floor(index / 7) * v.cellH
             width: v.cellW
             height: v.cellH
-            color: selected ? FiliTheme.alpha(FiliTheme.accentColor, 0.08) : "transparent"
+            readonly property bool targeted: v.dropIndex === index || (v.rangeFrom >= 0 && v.rangeTo >= 0 && index >= Math.min(v.rangeFrom, v.rangeTo) && index <= Math.max(v.rangeFrom, v.rangeTo))
+            color: targeted ? FiliTheme.alpha(FiliTheme.accentColor, 0.2) : selected ? FiliTheme.alpha(FiliTheme.accentColor, 0.08) : "transparent"
             // Grid lines: right and bottom
             Rectangle { anchors.right: parent.right; height: parent.height; width: FiliTheme.borderWidth; color: FiliTheme.alpha(FiliTheme.border, 0.6) }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: FiliTheme.borderWidth; color: FiliTheme.alpha(FiliTheme.border, 0.6) }
@@ -66,6 +78,18 @@ Item {
                 anchors.fill: parent
                 onClicked: v.dayClicked(cell.date)
                 onDoubleClicked: v.dayActivated(cell.date)
+                onPressed: { v.rangeFrom = cell.index; v.rangeTo = -1; forceActiveFocus(); }
+                onPositionChanged: m => {
+                    if (pressed)
+                        v.rangeTo = v.indexAt(mapToItem(v, m.x, m.y).x, mapToItem(v, m.x, m.y).y);
+                }
+                onReleased: {
+                    if (v.rangeTo >= 0 && v.rangeTo !== v.rangeFrom)
+                        v.daysCreated(v.tools.addDays(v.gridStart, Math.min(v.rangeFrom, v.rangeTo)), v.tools.addDays(v.gridStart, Math.max(v.rangeFrom, v.rangeTo)));
+                    v.reset();
+                }
+                onCanceled: v.reset()
+                Keys.onEscapePressed: v.reset()
             }
             // Day number: today is a disc in the accent colour
             Rectangle {
@@ -113,7 +137,30 @@ Item {
                             id: chipArea
                             anchors.fill: parent
                             hoverEnabled: true
-                            onClicked: v.eventClicked(chip.modelData)
+                            property point from
+                            property bool moving: false
+                            onPressed: m => { from = mapToItem(v, m.x, m.y); moving = false; forceActiveFocus(); }
+                            onPositionChanged: m => {
+                                // the events of a subscription cannot be moved
+                                if (!pressed || chip.modelData.readonly)
+                                    return;
+                                const p = mapToItem(v, m.x, m.y);
+                                if (!moving && Math.hypot(p.x - from.x, p.y - from.y) < 6)
+                                    return;
+                                moving = true;
+                                v.dropIndex = v.indexAt(p.x, p.y);
+                            }
+                            onReleased: m => {
+                                const to = v.dropIndex;
+                                v.reset();
+                                if (!moving)
+                                    v.eventClicked(chip.modelData);
+                                else if (to >= 0 && to !== cell.index)
+                                    v.eventMoved(chip.modelData, to - cell.index, (m.modifiers & Qt.AltModifier) !== 0);
+                                moving = false;
+                            }
+                            onCanceled: { moving = false; v.reset(); }
+                            Keys.onEscapePressed: { moving = false; v.reset(); }
                         }
                         Accessible.role: Accessible.Button
                         Accessible.name: chip.modelData.title

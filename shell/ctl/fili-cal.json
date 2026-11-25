@@ -43,6 +43,16 @@
       "keys": "Ctrl+3"
     },
     {
+      "name": "view-year",
+      "label": "Year",
+      "keys": "Ctrl+4"
+    },
+    {
+      "name": "view-list",
+      "label": "List",
+      "keys": "Ctrl+5"
+    },
+    {
       "name": "today",
       "label": "Today",
       "keys": "Ctrl+T"
@@ -76,6 +86,14 @@
       "name": "refresh-calendars",
       "label": "Refresh Subscriptions",
       "keys": "Ctrl+R"
+    },
+    {
+      "name": "search",
+      "label": "Search…",
+      "keys": "Ctrl+F"
+    },
+    {
+      "name": "goto"
     },
     {
       "name": "import",

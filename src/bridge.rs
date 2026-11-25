@@ -138,6 +138,9 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "calendarAdd"]
         fn calendar_add(self: Pin<&mut Agenda>, name: &QString, color: &QString, url: &QString) -> QString;
+        // Events whose title, place or notes hold the text, over all time, as JSON [{id, title, start, allDay, place, color, calendar}]
+        #[qinvokable]
+        fn search(self: &Agenda, text: &QString) -> QString;
         // What importing a file or a link would add, as JSON {ok, error?, count, events: [{title, start, allDay, place, every}]}
         #[qinvokable]
         #[cxx_name = "previewImport"]
@@ -599,6 +602,10 @@ impl qobject::Agenda {
 
     pub fn calendars(&self) -> QString {
         QString::from(&crate::calendars::json())
+    }
+
+    pub fn search(&self, text: &QString) -> QString {
+        QString::from(&model::search_json(&text.to_string()))
     }
 
     pub fn preview_import(&self, source: &QString) -> QString {

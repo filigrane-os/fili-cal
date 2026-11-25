@@ -1,4 +1,11 @@
 {
+ "Search": "Rechercher",
+ "Title, place or notes": "Titre, lieu ou notes",
+ "No event found": "Aucun événement trouvé",
+ "Year": "Année",
+ "List": "Liste",
+ "From %1": "À partir du %1",
+ "Nothing in this period": "Rien sur cette période",
  "Imported %1 events": "%1 événements importés",
  "Imported %1 events, %2 replaced": "%1 événements importés, dont %2 remplacés",
  "Exported to %1": "Exporté dans %1",

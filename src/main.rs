@@ -63,7 +63,8 @@ fn main() {
     }
     // A file or a link to open (what the system gives a handler of text/calendar and webcal:): the open window shows its import
     // preview, or the new one does
-    if let Some(src) = args.iter().skip(1).find(|a| !a.starts_with("--") && (a.starts_with("webcal:") || a.starts_with("webcals:") || a.starts_with("file:") || a.starts_with("http") || std::path::Path::new(a).is_file())) {
+    // (the value of --shot or --view is not a file to open)
+    if let Some(src) = args.iter().enumerate().skip(1).filter(|(i, _)| !matches!(args[i - 1].as_str(), "--shot" | "--view")).map(|(_, a)| a).find(|a| !a.starts_with("--") && (a.starts_with("webcal:") || a.starts_with("webcals:") || a.starts_with("file:") || a.starts_with("http") || std::path::Path::new(a).is_file())) {
         let abs = if src.contains("://") || src.starts_with("webcal") { src.clone() } else { std::fs::canonicalize(src).map_or_else(|_| src.clone(), |p| p.display().to_string()) };
         if let Some(pid) = ctl::windows().first()
             && ctl::client(&["--pid".to_string(), pid.to_string(), "action".to_string(), "import-file".to_string(), abs.clone()]).is_ok()

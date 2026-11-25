@@ -112,6 +112,12 @@ FiliDialog {
         open();
         titleField.focusField();
     }
+    // Whole days dragged over in the month: a whole-day event from `first` to `last`
+    function createDays(first, last) {
+        create(first);
+        allDay = true;
+        lastField.text = tools.iso(last);
+    }
     onAccepted: {
         // A series keeps its own first day: it moves by the days this occurrence was moved
         let day = dateField.text;

@@ -32,8 +32,9 @@ ApplicationWindow {
     // ---- State ---------------------------------------------------------------------------------------------------
     // `--view day|week|month` overrides the view kept from the last launch
     readonly property var launchArgs: Qt.application.arguments
-    property string viewMode: launchArgs.includes("--view") && ["day", "week", "month"].includes(launchArgs[launchArgs.indexOf("--view") + 1]) ? launchArgs[launchArgs.indexOf("--view") + 1]
-        : ["day", "week", "month"].includes(Fili.uiState("view")) ? Fili.uiState("view") : "week"
+    readonly property var viewNames: ["day", "week", "month", "year", "list"]
+    property string viewMode: launchArgs.includes("--view") && viewNames.includes(launchArgs[launchArgs.indexOf("--view") + 1]) ? launchArgs[launchArgs.indexOf("--view") + 1]
+        : viewNames.includes(Fili.uiState("view")) ? Fili.uiState("view") : "week"
     property date today: tools.day(new Date())
     property date now: new Date()
     property date anchor: tools.day(new Date())
@@ -75,8 +76,10 @@ ApplicationWindow {
     readonly property var upcoming: JSON.parse(soon.events).filter(e => tools.end(e) >= win.now || e.allDay).slice(0, 12)
 
     // The range the view shows: [from, to)
-    readonly property date rangeStart: viewMode === "month" ? tools.weekStart(new Date(anchor.getFullYear(), anchor.getMonth(), 1), firstDay) : viewMode === "week" ? tools.weekStart(anchor, firstDay) : anchor
-    readonly property date rangeEnd: tools.addDays(rangeStart, viewMode === "month" ? 42 : viewMode === "week" ? 7 : 1)
+    readonly property date rangeStart: viewMode === "month" ? tools.weekStart(new Date(anchor.getFullYear(), anchor.getMonth(), 1), firstDay) : viewMode === "week" ? tools.weekStart(anchor, firstDay)
+        : viewMode === "year" ? new Date(anchor.getFullYear(), 0, 1) : anchor
+    // The list shows the next 60 days; the year, its twelve months
+    readonly property date rangeEnd: viewMode === "year" ? new Date(anchor.getFullYear() + 1, 0, 1) : tools.addDays(rangeStart, viewMode === "month" ? 42 : viewMode === "week" ? 7 : viewMode === "list" ? 60 : 1)
     // Not onRangeStartChanged: the first evaluation of a binding would reload in the middle of another binding (a loop)
     onAnchorChanged: Qt.callLater(reload)
     onViewModeChanged: Qt.callLater(reload)
@@ -109,6 +112,10 @@ ApplicationWindow {
         const L = Qt.locale();
         if (viewMode === "month")
             return L.monthName(anchor.getMonth(), Locale.LongFormat) + " " + anchor.getFullYear();
+        if (viewMode === "year")
+            return String(anchor.getFullYear());
+        if (viewMode === "list")
+            return Fili.tr("From %1").replace("%1", anchor.getDate() + " " + L.monthName(anchor.getMonth(), Locale.LongFormat) + " " + anchor.getFullYear());
         if (viewMode === "day")
             return L.dayName(anchor.getDay(), Locale.LongFormat) + " " + anchor.getDate() + " " + L.monthName(anchor.getMonth(), Locale.LongFormat) + " " + anchor.getFullYear();
         const a = rangeStart, b = tools.addDays(rangeStart, 6);
@@ -116,7 +123,7 @@ ApplicationWindow {
             : a.getDate() + " " + L.monthName(a.getMonth(), Locale.ShortFormat) + " – " + b.getDate() + " " + L.monthName(b.getMonth(), Locale.ShortFormat) + " " + b.getFullYear();
     }
     function step(n) {
-        anchor = viewMode === "month" ? tools.addMonths(anchor, n) : tools.addDays(anchor, n * (viewMode === "week" ? 7 : 1));
+        anchor = viewMode === "year" ? tools.addMonths(anchor, 12 * n) : viewMode === "month" ? tools.addMonths(anchor, n) : tools.addDays(anchor, n * (viewMode === "week" ? 7 : viewMode === "list" ? 14 : 1));
     }
     function goToday() { anchor = tools.day(new Date()); }
     function setView(m) {
@@ -129,22 +136,24 @@ ApplicationWindow {
         const day = tools.sameDay(s, today) ? Fili.tr("Today") : tools.sameDay(s, tools.addDays(today, 1)) ? Fili.tr("Tomorrow") : L.dayName(s.getDay(), Locale.ShortFormat) + " " + s.getDate();
         return ev.allDay ? day : day + "  " + tools.clock(ev);
     }
-    function newEvent(at) { editor.create(at ?? (viewMode === "month" ? anchor : new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), Math.min(23, Math.max(9, now.getHours() + 1)), 0))); }
+    function newEvent(at) { editor.create(at ?? (["month", "year", "list"].includes(viewMode) ? anchor : new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), Math.min(23, Math.max(9, now.getHours() + 1)), 0))); }
     // A block moved or resized in the week: its start and end move by `dStart` and `dEnd` minutes. A series moves from the
     // occurrence that was dragged (its first start moves by as much); Alt makes a copy that is a single event.
     function changeEvent(ev, dStart, dEnd, copy) {
         const shift = (d, n) => { const r = new Date(d); r.setMinutes(r.getMinutes() + n); return r; };
+        // a whole day is written as a date, a timed event as date and time
+        const text = d => ev.allDay ? tools.iso(d) : tools.stamp(d);
         const occ = tools.start(ev), newStart = shift(occ, dStart);
         const newEnd = ev.end ? shift(tools.parse(ev.end), dEnd) : null;
         if (copy) {
-            cal.add(JSON.stringify({ title: ev.title, allDay: false, start: tools.stamp(newStart), end: newEnd ? tools.stamp(newEnd) : "", place: ev.place, note: ev.note, alarms: ev.alarms }));
+            cal.add(JSON.stringify({ title: ev.title, allDay: ev.allDay, start: text(newStart), end: newEnd ? text(newEnd) : "", place: ev.place, note: ev.note, alarms: ev.alarms, calendar: ev.calendar }));
             soon.refresh();
             return;
         }
         const first = ev.series ? shift(tools.parse(ev.first), dStart) : newStart;
-        const o = { start: tools.stamp(first) };
+        const o = { start: text(first) };
         if (newEnd)
-            o.end = tools.stamp(shift(first, Math.round((newEnd - newStart) / 60000)));
+            o.end = text(shift(first, Math.round((newEnd - newStart) / 60000)));
         cal.update(ev.id, JSON.stringify(o));
         soon.refresh();
     }
@@ -207,6 +216,8 @@ ApplicationWindow {
         "view-day": { on: () => true, run: () => win.setView("day") },
         "view-week": { on: () => true, run: () => win.setView("week") },
         "view-month": { on: () => true, run: () => win.setView("month") },
+        "view-year": { on: () => true, run: () => win.setView("year") },
+        "view-list": { on: () => true, run: () => win.setView("list") },
         "today": { on: () => true, run: () => win.goToday() },
         "previous": { on: () => true, run: () => win.step(-1) },
         "next": { on: () => true, run: () => win.step(1) },
@@ -214,6 +225,8 @@ ApplicationWindow {
         "undo": { on: () => !win.typing && JSON.parse(cal.undoState()).undo, run: () => { cal.undo(); soon.refresh(); } },
         "redo": { on: () => !win.typing && JSON.parse(cal.undoState()).redo, run: () => { cal.redo(); soon.refresh(); } },
         "refresh-calendars": { on: () => win.calendars.some(c => c.subscribed || c.account), run: () => { cal.syncNow(); } },
+        "search": { on: () => true, run: rest => searchDialog.show(rest) },
+        "goto": { on: () => true, run: rest => { const d = tools.parse(rest); if (!isNaN(d.getTime())) win.anchor = tools.day(d); } },
         "import": { on: () => !win.typing, run: () => importDialog.show("") },
         "import-file": { on: () => true, run: rest => { importDialog.show(rest); win.raise(); } },
         "export": { on: () => !win.typing, run: () => exportDialog.start() },
@@ -263,6 +276,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+Q"; onActivated: win.quit() }
     Shortcut { sequence: "Ctrl+N"; enabled: !win.typing; onActivated: win.runAction("new-event") }
     Shortcut { sequence: "Ctrl+Alt+A"; enabled: !win.typing; onActivated: win.runAction("add-account") }
+    Shortcut { sequence: "Ctrl+F"; onActivated: win.runAction("search") }
     Shortcut { sequence: "Ctrl+I"; enabled: !win.typing; onActivated: win.runAction("import") }
     Shortcut { sequence: "Ctrl+E"; enabled: !win.typing; onActivated: win.runAction("export") }
     Shortcut { sequence: "Ctrl+R"; enabled: !win.typing; onActivated: win.runAction("refresh-calendars") }
@@ -274,6 +288,8 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+1"; onActivated: win.setView("day") }
     Shortcut { sequence: "Ctrl+2"; onActivated: win.setView("week") }
     Shortcut { sequence: "Ctrl+3"; onActivated: win.setView("month") }
+    Shortcut { sequence: "Ctrl+4"; onActivated: win.setView("year") }
+    Shortcut { sequence: "Ctrl+5"; onActivated: win.setView("list") }
     Shortcut { sequence: "Left"; enabled: !win.typing && !win.aboutOpen; onActivated: win.step(-1) }
     Shortcut { sequence: "Right"; enabled: !win.typing && !win.aboutOpen; onActivated: win.step(1) }
     Shortcut { sequence: "Ctrl+Shift+L"; onActivated: win.runAction("debug") }
@@ -376,7 +392,7 @@ ApplicationWindow {
                 anchors { right: addButton.left; rightMargin: FiliTheme.space4 + FiliTheme.space1 + 1; verticalCenter: parent.verticalCenter }
                 spacing: FiliTheme.space1
                 Repeater {
-                    model: [{ id: "day", label: Fili.tr("Day") }, { id: "week", label: Fili.tr("Week") }, { id: "month", label: Fili.tr("Month") }]
+                    model: [{ id: "day", label: Fili.tr("Day") }, { id: "week", label: Fili.tr("Week") }, { id: "month", label: Fili.tr("Month") }, { id: "year", label: Fili.tr("Year") }, { id: "list", label: Fili.tr("List") }]
                     Rectangle {
                         id: seg
                         required property var modelData
@@ -523,10 +539,30 @@ ApplicationWindow {
                 onDayClicked: d => win.anchor = d
                 onDayActivated: d => win.newEvent(d)
                 onEventClicked: ev => editor.edit(ev)
+                onEventMoved: (ev, dDays, copy) => win.changeEvent(ev, dDays * 1440, dDays * 1440, copy)
+                onDaysCreated: (first, last) => editor.createDays(first, last)
+            }
+            YearView {
+                anchors.fill: parent
+                visible: win.viewMode === "year"
+                tools: tools
+                anchor: win.anchor
+                events: win.events
+                today: win.today
+                firstDay: win.firstDay
+                onDayPicked: d => { win.anchor = d; win.setView("month"); }
+            }
+            AgendaList {
+                anchors.fill: parent
+                visible: win.viewMode === "list"
+                tools: tools
+                events: win.events
+                today: win.today
+                onEventClicked: ev => editor.edit(ev)
             }
             TimeGrid {
                 anchors.fill: parent
-                visible: win.viewMode !== "month"
+                visible: win.viewMode === "day" || win.viewMode === "week"
                 tools: tools
                 first: win.rangeStart
                 days: win.viewMode === "week" ? 7 : 1
@@ -648,6 +684,12 @@ ApplicationWindow {
             }
         }
 
+        SearchDialog {
+            id: searchDialog
+            tools: tools
+            backend: cal
+            onPicked: (day, id) => { win.anchor = day; if (win.viewMode === "year") win.setView("month"); }
+        }
         ImportDialog {
             id: importDialog
             backend: cal

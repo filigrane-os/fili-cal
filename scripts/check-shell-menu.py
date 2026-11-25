@@ -12,7 +12,7 @@ actions = set(re.findall(r'^\s+"([a-z-]+)": \{ on:', qml, re.M))
 shortcuts = set(re.findall(r'Shortcut \{ sequence: "([^"]+)"', qml)) | set(re.findall(r'sequence: "([^"]+)"', qml))
 # Actions reachable only from the interface (context menu of a row)
 # ctl only: test hooks for the attention colours, and the file the system hands over (text/calendar, webcal:)
-without_menu = {"attention", "attention-clear", "import-file"}
+without_menu = {"attention", "attention-clear", "import-file", "goto"}
 errors = []
 if not (root / "shell/lia/fili-cal.md").is_file():
     errors.append("brief of Lia missing: shell/lia/fili-cal.md")

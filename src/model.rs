@@ -76,6 +76,31 @@ pub fn events_json_of(all: &[(String, Event)], from: &str, to: &str) -> String {
     Value::Array(rows.into_iter().map(|r| r.2).collect()).to_string()
 }
 
+/// Events whose title, place or notes hold the text (any case), over all time, in the calendars that are shown: for each one its
+/// next occurrence (or its first when it is over). At most 100, the coming ones first, then the past ones, the latest first.
+pub fn search_json(query: &str) -> String {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return "[]".into();
+    }
+    let cals = calendars::list();
+    let today = when::now().date().and_hms_opt(0, 0, 0).unwrap_or_default();
+    let mut rows: Vec<(bool, NaiveDateTime, Value)> = Vec::new();
+    for (id, e) in cli::load_all() {
+        let slug = if e.calendar.is_empty() { calendars::DEFAULT } else { &e.calendar };
+        let Some(cal) = cals.iter().find(|c| c.slug == slug).filter(|c| !c.hidden) else { continue };
+        if ![&e.summary, &e.place, &e.note].iter().any(|f| f.to_lowercase().contains(&q)) {
+            continue;
+        }
+        let next = ics::occurrences(&e, today, today + Duration::days(366 * 3)).into_iter().next();
+        let (upcoming, at) = next.map_or((false, e.display_start()), |n| (true, n));
+        rows.push((upcoming, at, json!({"id": id, "title": e.summary, "start": at.format(MINUTE).to_string(), "allDay": e.all_day, "place": e.place, "color": cal.color, "calendar": cal.name})));
+    }
+    // coming ones first by date, then the past ones, the latest first
+    rows.sort_by(|a, b| b.0.cmp(&a.0).then(if a.0 { a.1.cmp(&b.1) } else { b.1.cmp(&a.1) }));
+    Value::Array(rows.into_iter().take(100).map(|r| r.2).collect()).to_string()
+}
+
 /// The fields of the JSON replace those of the event
 fn apply(e: &mut Event, v: &Value) -> Result<(), String> {
     let text = |k: &str| v.get(k).and_then(Value::as_str);
