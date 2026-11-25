@@ -1,4 +1,12 @@
 {
+ "Same hour everywhere": "Même heure partout",
+ "Last day": "Dernier jour",
+ "Time zone": "Fuseau horaire",
+ "Custom rule, kept as it is: %1": "Règle personnalisée, conservée telle quelle : %1",
+ "and %1 more alerts, kept": "et %1 autres alertes, conservées",
+ "The file %1.ics cannot be read (%2)": "Le fichier %1.ics est illisible (%2)",
+ "%1 files cannot be read, the first is %2.ics": "%1 fichiers sont illisibles, le premier est %2.ics",
+ "no event in it": "aucun événement dedans",
  "@decimal": ",",
  "@name": "Français",
  "All": "Tout",

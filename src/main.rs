@@ -13,6 +13,7 @@ mod model;
 mod theme;
 mod when;
 mod window;
+mod zone;
 
 pub use cli::short_hash;
 

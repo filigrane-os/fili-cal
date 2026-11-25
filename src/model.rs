@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use crate::{
     cli,
     ics::{self, Event, Freq, Rule},
-    when,
+    when, zone,
 };
 
 const MINUTE: &str = "%Y-%m-%dT%H:%M";
@@ -23,14 +23,19 @@ fn parse_start(s: &str) -> Result<(NaiveDateTime, bool), String> {
 }
 
 fn one(id: &str, e: &Event, occ: NaiveDateTime) -> Value {
-    let end = e.end.map(|x| x + (occ - e.start));
+    let end = e.end_of(occ);
+    // `start`, `end`, `occ` and `first` are what the views show (system zone); `zstart` and `zend` are the same time in the
+    // zone of the event (`tz`, empty = floating), which the editor shows
+    let zone_of = |shown: NaiveDateTime| e.from_display(shown).format(MINUTE).to_string();
     json!({
         "id": id, "title": e.summary, "start": occ.format(MINUTE).to_string(),
         "end": end.map(|x| x.format(MINUTE).to_string()), "allDay": e.all_day, "place": e.place, "note": e.note,
+        "tz": e.tzid.clone().unwrap_or_default(), "zstart": zone_of(occ), "zend": end.map(zone_of),
         "alarms": e.alarms, "every": e.rule.as_ref().map_or("", |r| freq_word(r.freq)),
         "interval": e.rule.as_ref().map_or(1, |r| r.interval), "count": e.rule.as_ref().and_then(|r| r.count),
         "until": e.rule.as_ref().and_then(|r| r.until).map(|u| u.format(MINUTE).to_string()),
-        "occ": occ.format(MINUTE).to_string(), "first": e.start.format(MINUTE).to_string(), "series": e.rule.is_some()
+        "custom": e.rule.as_ref().is_some_and(|r| r.is_custom(e.start)), "rrule": e.rule.as_ref().map_or(String::new(), |r| r.text(e.all_day)),
+        "occ": occ.format(MINUTE).to_string(), "first": e.display_start().format(MINUTE).to_string(), "zfirst": e.start.format(MINUTE).to_string(), "series": e.rule.is_some() || !e.rdate.is_empty()
     })
 }
 
@@ -44,12 +49,17 @@ fn freq_word(f: Freq) -> &'static str {
 }
 
 /// The occurrences between two days (`to` excluded) as a JSON array, in order
+#[allow(dead_code)]
 pub fn events_json(from: &str, to: &str) -> String {
+    events_json_of(&cli::load_all(), from, to)
+}
+
+pub fn events_json_of(all: &[(String, Event)], from: &str, to: &str) -> String {
     let (Some(from), Some(to)) = (parse_day(from), parse_day(to)) else { return "[]".into() };
     let mut rows: Vec<(NaiveDateTime, String, Value)> = Vec::new();
-    for (id, e) in cli::load_all() {
-        for occ in ics::occurrences(&e, from, to) {
-            rows.push((occ, e.summary.clone(), one(&id, &e, occ)));
+    for (id, e) in all {
+        for occ in ics::occurrences(e, from, to) {
+            rows.push((occ, e.summary.clone(), one(id, e, occ)));
         }
     }
     rows.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
@@ -71,25 +81,45 @@ fn apply(e: &mut Event, v: &Value) -> Result<(), String> {
     if let Some(n) = text("note") {
         e.note = n.to_string();
     }
+    // `tz` present: the times of this request are wall times of that zone ("" = floating); absent: they are what the views
+    // show and are brought to the zone of the event
+    let typed_in_zone = v.get("tz").is_some();
+    if let Some(z) = text("tz") {
+        let z = z.trim();
+        if z.is_empty() || z.eq_ignore_ascii_case("floating") {
+            e.tzid = None;
+        } else if zone::known(z) {
+            e.tzid = Some(z.to_string());
+        } else {
+            return Err(format!("unknown time zone: {z}"));
+        }
+    }
+    let was_all_day = e.all_day;
+    if let Some(all) = v.get("allDay").and_then(Value::as_bool) {
+        e.all_day = all;
+    }
+    let to_event_zone = |e: &Event, d: NaiveDateTime| if typed_in_zone { d } else { e.from_display(d) };
     if let Some(s) = text("start") {
         let (d, all) = parse_start(s)?;
         let len = e.length();
-        e.start = d;
         e.all_day = v.get("allDay").and_then(Value::as_bool).unwrap_or(all);
-        if e.all_day {
+        e.start = if e.all_day { d } else { to_event_zone(e, d) };
+        if e.all_day != was_all_day {
             e.end = None;
         } else if e.end.is_some() && v.get("end").is_none() {
-            e.end = Some(d + len);
+            e.end = Some(e.start + len);
         }
-    } else if let Some(all) = v.get("allDay").and_then(Value::as_bool) {
-        e.all_day = all;
-        if all {
-            e.end = None;
-        }
+    } else if e.all_day != was_all_day {
+        e.end = None;
     }
     if let Some(end) = v.get("end") {
         e.end = match end.as_str() {
-            Some(s) if !s.is_empty() && !e.all_day => Some(parse_start(s)?.0),
+            // a whole-day event ends on the day after its last one (DTEND is exclusive); a single day has no end
+            Some(s) if !s.is_empty() => {
+                let d = parse_start(s)?.0;
+                let d = if e.all_day { d } else { to_event_zone(e, d) };
+                if e.all_day && d <= e.start { None } else { Some(d) }
+            }
             _ => None,
         };
     }
@@ -106,8 +136,13 @@ fn apply(e: &mut Event, v: &Value) -> Result<(), String> {
             e.rule = None;
         } else {
             let freq = Freq::parse(every).ok_or("every: day, week, month or year")?;
+            // the same frequency keeps the rule as it is (its BYDAY… parts); another one starts a simple rule
             let old = e.rule.take();
-            e.rule = Some(Rule { freq, interval: old.as_ref().map_or(1, |r| r.interval), count: old.as_ref().and_then(|r| r.count), until: old.and_then(|r| r.until) });
+            e.rule = Some(match old {
+                Some(r) if r.freq == freq => r,
+                Some(r) => Rule::simple(freq, r.interval, r.count, r.until),
+                None => Rule::simple(freq, 1, None, None),
+            });
         }
     }
     if let Some(r) = e.rule.as_mut() {
@@ -128,7 +163,7 @@ pub fn add(json: &str) -> Result<String, String> {
     let v: Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
     let id = cli::new_id();
     let now = when::now();
-    let mut e = Event { uid: format!("{id}@filigrane"), summary: String::new(), place: String::new(), note: String::new(), start: now, end: None, all_day: false, alarms: vec![], rule: None, skip: vec![] };
+    let mut e = Event { uid: format!("{id}@filigrane"), start: now, ..Event::default() };
     if v.get("title").and_then(Value::as_str).is_none_or(|t| t.trim().is_empty()) {
         return Err("the title is empty".into());
     }
@@ -160,10 +195,10 @@ pub fn remove(id: &str, occ: &str) -> Result<(), String> {
     } else {
         let mut e = cli::load(id)?;
         let (d, _) = parse_start(occ)?;
-        if e.rule.is_none() {
+        if e.rule.is_none() && e.rdate.is_empty() {
             return Err("not a series".into());
         }
-        e.skip.push(d);
+        e.skip.push(e.from_display(d));
         cli::save(id, &e)?;
     }
     let _ = cli::tick();

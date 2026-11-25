@@ -12,6 +12,10 @@ overflows (check on a capture: `fili-cal --view month --shot f.png` with `QT_QPA
 
 ## P0. Debt to settle first (correctness, nothing visible)
 
+**Status (2026-11-25): done**, except the property test "to_ics then parse is the identity" over random events (the four fixtures in
+`tests/fixtures/` round-trip) and the editor's zone list (a text field takes the zone name for now). The editor keeps the custom
+rule and the extra alerts it cannot show. `BYYEARDAY`/`BYWEEKNO` are kept and written back but not expanded (the rule is "custom").
+
 These make a real calendar file import wrongly today; they come before any new feature.
 
 1. **Recurrence rules**: `BYDAY` (every Monday and Thursday, the second Tuesday), `BYMONTHDAY`, `BYMONTH`, `BYSETPOS`, `WKST`,

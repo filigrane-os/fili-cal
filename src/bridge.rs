@@ -421,11 +421,13 @@ pub struct AgendaRust {
     failed: bool,
     // The range shown: from, to (YYYY-MM-DD)
     range: (String, String),
+    // What the footer says about unreadable files (so that it is cleared when they are fixed, and nothing else is)
+    problem: String,
 }
 
 impl Default for AgendaRust {
     fn default() -> Self {
-        AgendaRust { events: QString::from("[]"), message: QString::default(), failed: false, range: (String::new(), String::new()) }
+        AgendaRust { events: QString::from("[]"), message: QString::default(), failed: false, range: (String::new(), String::new()), problem: String::new() }
     }
 }
 
@@ -447,7 +449,21 @@ impl qobject::Agenda {
 
     pub fn refresh(mut self: Pin<&mut Self>) {
         let (from, to) = self.range.clone();
-        let json = model::events_json(&from, &to);
+        let scan = cli::scan();
+        let json = model::events_json_of(&scan.events, &from, &to);
+        // Files that cannot be read are told in the footer instead of vanishing
+        let problem = match scan.unreadable.as_slice() {
+            [] => String::new(),
+            [(id, why)] => i18n::trf("The file %1.ics cannot be read (%2)", &[&id, &why]),
+            list => i18n::trf("%1 files cannot be read, the first is %2.ics", &[&list.len(), &list[0].0]),
+        };
+        if problem != self.problem {
+            let shown = self.message.to_string();
+            self.as_mut().rust_mut().message = if problem.is_empty() && shown != self.problem { self.message.clone() } else { QString::from(&problem) };
+            self.as_mut().rust_mut().problem = problem;
+            self.as_mut().rust_mut().failed = false;
+            self.as_mut().changed();
+        }
         if self.events.to_string() != json {
             self.as_mut().rust_mut().events = QString::from(&json);
             self.as_mut().changed();

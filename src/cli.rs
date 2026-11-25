@@ -65,21 +65,56 @@ pub fn path_of(id: &str) -> Result<PathBuf, String> {
     Ok(store().join(format!("{id}.ics")))
 }
 
-/// (id, event) of every file of the store
-pub fn load_all() -> Vec<(String, Event)> {
-    let mut out = Vec::new();
+/// What the files of the store gave: the events, and the files that could not be read (name, why)
+pub struct Scan {
+    pub events: Vec<(String, Event)>,
+    pub unreadable: Vec<(String, String)>,
+}
+
+type Cached = (std::time::SystemTime, u64, Option<Event>);
+
+/// Parsed files of this process, by name and modification time: `tick` (every minute) and the window (on each change) read
+/// only the files that changed, so thousands of events stay cheap
+fn cache() -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, Cached>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, Cached>>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// Reads the store. A file that cannot be read, or that holds no event, is reported instead of disappearing.
+pub fn scan() -> Scan {
+    let mut out = Scan { events: Vec::new(), unreadable: Vec::new() };
     let Ok(rd) = fs::read_dir(store()) else { return out };
+    let mut cache = cache().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut seen = std::collections::HashSet::new();
     for f in rd.flatten() {
         let p = f.path();
-        if p.extension().is_some_and(|e| e == "ics")
-            && let (Some(id), Ok(text)) = (p.file_stem().and_then(|s| s.to_str()), fs::read_to_string(&p))
-            && let Some(e) = ics::parse_ics(&text).into_iter().next()
-        {
-            out.push((id.to_string(), e));
+        if p.extension().is_none_or(|e| e != "ics") {
+            continue;
         }
+        let Some(id) = p.file_stem().and_then(|s| s.to_str()).map(str::to_string) else { continue };
+        let meta = fs::metadata(&p).ok();
+        let stamp = (meta.as_ref().and_then(|m| m.modified().ok()).unwrap_or(std::time::UNIX_EPOCH), meta.as_ref().map_or(0, std::fs::Metadata::len));
+        seen.insert(p.clone());
+        let hit = cache.get(&p).filter(|c| (c.0, c.1) == stamp).cloned();
+        let entry = hit.unwrap_or_else(|| {
+            let parsed = fs::read_to_string(&p).ok().and_then(|text| ics::parse_ics(&text).into_iter().next());
+            (stamp.0, stamp.1, parsed)
+        });
+        match &entry.2 {
+            Some(e) => out.events.push((id, e.clone())),
+            None => out.unreadable.push((id, crate::i18n::tr("no event in it").to_string())),
+        }
+        cache.insert(p, entry);
     }
-    out.sort_by_key(|(id, e)| (e.start, id.clone()));
+    cache.retain(|k, _| seen.contains(k));
+    out.events.sort_by_key(|(id, e)| (e.display_start(), id.clone()));
+    out.unreadable.sort();
     out
+}
+
+/// (id, event) of every file of the store
+pub fn load_all() -> Vec<(String, Event)> {
+    scan().events
 }
 
 pub fn load(id: &str) -> Result<Event, String> {
@@ -136,7 +171,8 @@ fn apply(e: &mut Event, o: &Opts, now: NaiveDateTime, adding: bool) -> Result<()
     let old_len = e.length();
     if let Some(at) = o.one.get("at") {
         let (d, all) = when::parse_when(at, now)?;
-        (e.start, e.all_day) = (d, all);
+        // typed times are the ones the views show; the event may live in another zone
+        (e.start, e.all_day) = (if all { d } else { e.from_display(d) }, all);
         // the length of the event is kept when only the start moves
         if !adding && e.end.is_some() && !o.one.contains_key("end") && !o.one.contains_key("for") {
             e.end = Some(d + old_len);
@@ -146,7 +182,7 @@ fn apply(e: &mut Event, o: &Opts, now: NaiveDateTime, adding: bool) -> Result<()
         // a time alone is on the day of the start (a duration is counted from the start)
         let base = if end.starts_with('+') { e.start } else { e.start.date().and_hms_opt(0, 0, 0).unwrap_or(e.start) };
         let (d, _) = when::parse_when(end, base)?;
-        e.end = Some(d);
+        e.end = Some(if e.all_day || end.starts_with('+') { d } else { e.from_display(d) });
     }
     if let Some(len) = o.one.get("for") {
         e.end = Some(e.start + Duration::seconds(when::parse_duration(len)?));
@@ -168,7 +204,7 @@ fn apply(e: &mut Event, o: &Opts, now: NaiveDateTime, adding: bool) -> Result<()
         e.rule = if freq == "none" {
             None
         } else {
-            Some(Rule { freq: Freq::parse(freq).ok_or("--every: day, week, month, year or none")?, interval: 1, count: None, until: None })
+            Some(Rule::simple(Freq::parse(freq).ok_or("--every: day, week, month, year or none")?, 1, None, None))
         };
     }
     if let Some(r) = e.rule.as_mut() {
@@ -210,10 +246,10 @@ fn print_occ(v: &[Occ], mode: &str) {
         let rows: Vec<_> = v
             .iter()
             .map(|o| {
-                let end = o.ev.end.map(|e| e + (o.start - o.ev.start));
+                let end = o.ev.end_of(o.start);
                 json!({"v": 1, "id": o.id, "title": o.ev.summary, "start": o.start.format("%Y-%m-%dT%H:%M:%S").to_string(),
                     "end": end.map(|e| e.format("%Y-%m-%dT%H:%M:%S").to_string()), "all_day": o.ev.all_day, "place": o.ev.place,
-                    "note": o.ev.note, "alarms": o.ev.alarms, "every": o.ev.rule.as_ref().map(|r| r.freq.name())})
+                    "note": o.ev.note, "alarms": o.ev.alarms, "every": o.ev.rule.as_ref().map(|r| r.freq.name()), "tz": o.ev.tzid})
             })
             .collect();
         println!("{}", json!(rows));
@@ -221,7 +257,7 @@ fn print_occ(v: &[Occ], mode: &str) {
     }
     for o in v {
         if mode == "tsv" {
-            let end = o.ev.end.map(|e| when_text(e + (o.start - o.ev.start), o.ev.all_day)).unwrap_or_default();
+            let end = o.ev.end_of(o.start).map(|e| when_text(e, o.ev.all_day)).unwrap_or_default();
             println!("{}\t{}\t{}\t{}\t{}\t{}", o.id, when_text(o.start, o.ev.all_day), end, o.ev.all_day, o.ev.summary, o.ev.place);
         } else {
             let place = if o.ev.place.is_empty() { String::new() } else { format!("  ({})", o.ev.place) };
@@ -322,7 +358,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 return Err("add needs --at WHEN".into());
             }
             let id = new_id();
-            let mut e = Event { uid: format!("{id}@filigrane"), summary: title, place: String::new(), note: String::new(), start: now, end: None, all_day: false, alarms: vec![], rule: None, skip: vec![] };
+            let mut e = Event { uid: format!("{id}@filigrane"), summary: title, start: now, ..Event::default() };
             apply(&mut e, &o, now, true)?;
             save(&id, &e)?;
             println!("{id}");
@@ -344,7 +380,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
             }
             let id = new_id();
             let alarms = if words[0].starts_with('+') { vec![0] } else if all_day { vec![] } else { vec![600] };
-            let e = Event { uid: format!("{id}@filigrane"), summary: title, place: String::new(), note: String::new(), start, end: None, all_day, alarms, rule: None, skip: vec![] };
+            let e = Event { uid: format!("{id}@filigrane"), summary: title, start, all_day, alarms, ..Event::default() };
             save(&id, &e)?;
             println!("{id}");
             let _ = tick();
@@ -360,12 +396,12 @@ pub fn run(args: &[String]) -> Result<(), String> {
             let id = o.words.first().ok_or("rm needs an id")?;
             let mut e = load(id)?;
             if let Some(on) = o.one.get("on") {
-                let (d, _) = when::parse_when(on, e.start)?;
+                let (d, _) = when::parse_when(on, e.display_start())?;
                 let d = if e.all_day { d.date().and_hms_opt(0, 0, 0).unwrap_or(d) } else { d };
                 if e.rule.is_none() || !ics::occurrences(&e, d, d + Duration::seconds(1)).contains(&d) {
                     return Err(format!("no occurrence of {id} on {on}"));
                 }
-                e.skip.push(d);
+                e.skip.push(e.from_display(d));
                 save(id, &e)?;
             } else {
                 fs::remove_file(path_of(id)?).map_err(|x| x.to_string())?;

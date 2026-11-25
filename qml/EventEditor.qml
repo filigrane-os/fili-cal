@@ -13,6 +13,13 @@ FiliDialog {
     // Start of the first occurrence of a series (the series moves by as many days as the date of this occurrence)
     property string first: ""
     property bool series: false
+    // The occurrence and the first start as wall times of the zone of the event (the editor works in that zone)
+    property string occZ: ""
+    // The rule has parts the editor cannot show (BYDAY, BYSETPOS…): it is kept as it is and shown as text
+    property bool custom: false
+    property string rrule: ""
+    // Alerts beyond the first one are kept; the choice below changes the first one
+    property var alertsRest: []
     readonly property bool isNew: eventId === ""
     // Duration kept when the start moves: the end is "start + length" until the user types one
     property bool allDay: false
@@ -20,11 +27,14 @@ FiliDialog {
     title: isNew ? Fili.tr("New event") : Fili.tr("Event")
     confirmLabel: Fili.tr("Save")
     cardWidth: 460
-    confirmEnabled: titleField.text.trim() !== "" && startOk && endOk
+    confirmEnabled: titleField.text.trim() !== "" && startOk && endOk && lastOk && zoneOk
     readonly property bool dateOk: /^\d{4}-\d{2}-\d{2}$/.test(dateField.text) && !isNaN(tools.parse(dateField.text).getTime())
     readonly property bool timeOk: /^([01]\d|2[0-3]):[0-5]\d$/.test(startField.text)
     readonly property bool startOk: dateOk && (allDay || timeOk)
     readonly property bool endOk: allDay || endField.text === "" || (/^([01]\d|2[0-3]):[0-5]\d$/.test(endField.text) && endField.text >= startField.text)
+    // A whole-day event can last several days: the last day, on or after the first
+    readonly property bool lastOk: !allDay || lastField.text === "" || (/^\d{4}-\d{2}-\d{2}$/.test(lastField.text) && !isNaN(tools.parse(lastField.text).getTime()) && lastField.text >= dateField.text)
+    readonly property bool zoneOk: /^(|UTC|[A-Za-z][A-Za-z_+\-]*(\/[A-Za-z0-9_+\-]+)*)$/.test(zoneField.text.trim())
     signal saved(string id, string json)
     signal deleted(string id, string occ, bool all)
 
@@ -41,14 +51,22 @@ FiliDialog {
     function edit(ev) {
         eventId = ev.id;
         occ = ev.occ;
-        first = ev.first;
+        first = ev.zfirst;
+        occZ = ev.zstart;
         series = ev.series;
-        const s = tools.start(ev);
+        custom = ev.custom;
+        rrule = ev.rrule;
+        alertsRest = ev.alarms.slice(1);
+        zoneField.text = ev.tz;
+        const s = tools.parse(ev.zstart);
         allDay = ev.allDay;
         titleField.text = ev.title;
         dateField.text = tools.iso(s);
         startField.text = ev.allDay ? "09:00" : tools.pad(s.getHours()) + ":" + tools.pad(s.getMinutes());
-        endField.text = ev.end && !ev.allDay ? tools.pad(tools.end(ev).getHours()) + ":" + tools.pad(tools.end(ev).getMinutes()) : "";
+        const e = ev.zend ? tools.parse(ev.zend) : null;
+        endField.text = e && !ev.allDay ? tools.pad(e.getHours()) + ":" + tools.pad(e.getMinutes()) : "";
+        // the end of a whole-day event is the day after its last one
+        lastField.text = e && ev.allDay ? tools.iso(tools.addDays(e, -1)) : tools.iso(s);
         placeField.text = ev.place;
         noteField.text = ev.note;
         every = ev.every;
@@ -61,9 +79,15 @@ FiliDialog {
         occ = "";
         first = "";
         series = false;
+        occZ = "";
+        custom = false;
+        rrule = "";
+        alertsRest = [];
+        zoneField.text = "";
         allDay = date.getHours() === 0 && date.getMinutes() === 0;
         titleField.text = "";
         dateField.text = tools.iso(date);
+        lastField.text = tools.iso(date);
         const h = allDay ? 9 : date.getHours(), m = allDay ? 0 : date.getMinutes();
         startField.text = tools.pad(h) + ":" + tools.pad(m);
         endField.text = tools.pad(Math.min(23, h + 1)) + ":" + tools.pad(m);
@@ -78,14 +102,17 @@ FiliDialog {
         // A series keeps its own first day: it moves by the days this occurrence was moved
         let day = dateField.text;
         if (series && first !== "") {
-            const delta = Math.round((tools.parse(dateField.text) - tools.day(tools.parse(occ))) / 86400000);
+            const delta = Math.round((tools.parse(dateField.text) - tools.day(tools.parse(occZ))) / 86400000);
             day = tools.iso(tools.addDays(tools.parse(first), delta));
         }
+        // the days a whole-day event lasts, counted from its first day; DTEND is the day after the last one
+        const span = allDay && lastField.text > dateField.text ? Math.round((tools.parse(lastField.text) - tools.parse(dateField.text)) / 86400000) : 0;
         const o = {
             title: titleField.text.trim(), allDay: allDay,
             start: allDay ? day : day + "T" + startField.text,
-            end: allDay || endField.text === "" ? "" : day + "T" + endField.text,
-            place: placeField.text, note: noteField.text, every: every, alarms: alert < 0 ? [] : [alert]
+            end: allDay ? (span > 0 ? tools.iso(tools.addDays(tools.parse(day), span + 1)) : "") : (endField.text === "" ? "" : day + "T" + endField.text),
+            tz: zoneField.text.trim(),
+            place: placeField.text, note: noteField.text, every: every, alarms: alert < 0 ? [] : [alert].concat(alertsRest)
         };
         saved(eventId, JSON.stringify(o));
     }
@@ -117,6 +144,11 @@ FiliDialog {
         FiliTextField { id: dateField; width: 120; placeholder: "2026-12-24"; error: !ed.dateOk && text !== ""; onAccepted: ed.accept() }
     }
     Row2 {
+        visible: ed.allDay
+        label: Fili.tr("Last day")
+        FiliTextField { id: lastField; width: 120; placeholder: "2026-12-26"; error: !ed.lastOk; onAccepted: ed.accept() }
+    }
+    Row2 {
         visible: !ed.allDay
         label: Fili.tr("Time")
         FiliTextField { id: startField; width: 70; placeholder: "14:30"; error: !ed.timeOk && text !== ""; onAccepted: ed.accept() }
@@ -124,12 +156,35 @@ FiliDialog {
         FiliTextField { id: endField; width: 70; placeholder: "15:30"; error: !ed.endOk; onAccepted: ed.accept() }
     }
     Row2 {
+        visible: !ed.allDay
+        label: Fili.tr("Time zone")
+        FiliTextField { id: zoneField; width: 200; placeholder: Fili.tr("Same hour everywhere"); error: !ed.zoneOk; onAccepted: ed.accept() }
+    }
+    Row2 {
         label: Fili.tr("Repeat")
         FiliSelect { width: 200; model: ed.repeats; current: ed.every; onPicked: v => ed.every = v }
+    }
+    Text {
+        visible: ed.custom && ed.every !== ""
+        width: parent.width
+        elide: Text.ElideRight
+        text: Fili.tr("Custom rule, kept as it is: %1").replace("%1", ed.rrule)
+        font.family: FiliTheme.font
+        font.pixelSize: FiliTheme.sizeSmall
+        color: FiliTheme.muted
     }
     Row2 {
         label: Fili.tr("Alert")
         FiliSelect { width: 200; model: ed.alerts; current: ed.alert; onPicked: v => ed.alert = v }
+    }
+    Text {
+        visible: ed.alertsRest.length > 0 && ed.alert >= 0
+        width: parent.width
+        elide: Text.ElideRight
+        text: Fili.tr("and %1 more alerts, kept").replace("%1", ed.alertsRest.length)
+        font.family: FiliTheme.font
+        font.pixelSize: FiliTheme.sizeSmall
+        color: FiliTheme.muted
     }
     Row2 {
         label: Fili.tr("Place")

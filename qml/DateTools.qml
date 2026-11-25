@@ -24,8 +24,9 @@ QtObject {
     // The occurrence touches the day (a whole day is on its day only)
     function onDay(ev, d) {
         const s = start(ev), e = end(ev), a = day(d), b = addDays(a, 1);
+        // a whole day lasts from its first day to the day before its end (DTEND is the day after the last one)
         if (ev.allDay)
-            return sameDay(s, a);
+            return a >= day(s) && a < (ev.end && day(e) > day(s) ? day(e) : addDays(day(s), 1));
         return s < b && (e > a || s >= a);
     }
     function eventsOn(events, d) { return events.filter(ev => onDay(ev, d)); }
