@@ -12,6 +12,7 @@ mod ics;
 mod logs;
 mod model;
 mod settings;
+mod subscribe;
 mod theme;
 mod undo;
 mod when;

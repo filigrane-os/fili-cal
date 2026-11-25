@@ -31,7 +31,7 @@ use std::{
 
 use chrono::{Duration, NaiveDateTime, Timelike};
 use crate::ics::{self, Event, Freq, Rule};
-use crate::{calendars, undo, when};
+use crate::{calendars, subscribe, undo, when};
 use serde_json::json;
 
 /// The tests that point the store at a folder of their own take turns
@@ -150,9 +150,18 @@ pub fn load(id: &str) -> Result<Event, String> {
     ics::parse_ics(&text).into_iter().next().map(|e| Event { calendar: calendar_of(&p), ..e }).ok_or_else(|| format!("unreadable event: {id}"))
 }
 
+/// The events of a subscription come from its link: they cannot be changed here
+fn read_only(calendar: &str) -> Result<(), String> {
+    match calendars::subscription(calendar) {
+        Some(c) => Err(crate::i18n::trf("%1 is a subscription: its events cannot be changed", &[&c.name])),
+        None => Ok(()),
+    }
+}
+
 /// Writes an event in its calendar (a changed calendar moves the file)
 pub fn save(id: &str, e: &Event) -> Result<(), String> {
     let p = path_in(&e.calendar, id)?;
+    read_only(&calendar_of(&p))?;
     fs::create_dir_all(p.parent().ok_or("no folder")?).map_err(|x| x.to_string())?;
     let before = fs::read_to_string(&p).ok();
     let tmp = p.with_extension("ics.new");
@@ -163,7 +172,8 @@ pub fn save(id: &str, e: &Event) -> Result<(), String> {
     // the same id in another calendar: the event moved
     for c in calendars::list() {
         let q = calendars::dir_of(&c.slug).join(format!("{id}.ics"));
-        if q != p && q.exists() {
+        // a subscription is never touched from here (its files are those of its link)
+        if q != p && q.exists() && calendars::subscription(&c.slug).is_none() {
             let old = fs::read_to_string(&q).ok();
             fs::remove_file(&q).map_err(|x| x.to_string())?;
             undo::record(&c.slug, id, old, None);
@@ -175,6 +185,7 @@ pub fn save(id: &str, e: &Event) -> Result<(), String> {
 /// Deletes the file of an event (the step can be undone)
 pub fn delete(id: &str) -> Result<(), String> {
     let p = path_of(id)?;
+    read_only(&calendar_of(&p))?;
     let before = fs::read_to_string(&p).ok();
     fs::remove_file(&p).map_err(|x| x.to_string())?;
     undo::record(&calendar_of(&p), id, before, None);
@@ -198,7 +209,7 @@ fn parse_opts(args: &[String]) -> Result<Opts, String> {
         match a.strip_prefix("--") {
             Some(name @ ("reminder" | "tsv" | "json")) => o.flags.push(name.to_string()),
             Some("alarm") => o.alarms.push(it.next().ok_or("--alarm needs a duration")?.clone()),
-            Some(name @ ("at" | "end" | "for" | "place" | "note" | "every" | "interval" | "count" | "until" | "title" | "on" | "from" | "to" | "days" | "calendar")) => {
+            Some(name @ ("at" | "end" | "for" | "place" | "note" | "every" | "interval" | "count" | "until" | "title" | "on" | "from" | "to" | "days" | "calendar" | "refresh")) => {
                 o.one.insert(name.to_string(), it.next().ok_or(format!("--{name} needs a value"))?.clone());
             }
             Some(other) => return Err(format!("unknown option: --{other}")),
@@ -349,6 +360,8 @@ fn notify(title: &str, body: &str) {
 }
 
 pub fn tick() -> Result<(), String> {
+    // subscriptions that are due are fetched by a process of their own, so that the minute tick never waits for the network
+    crate::subscribe::spawn_due();
     let now = when::now();
     let all = load_all();
     let fired_path = state().join("calendar-fired");
@@ -509,7 +522,7 @@ fn run_command(args: &[String]) -> Result<(), String> {
             }
         }
         "tick" => tick()?,
-        "calendar" => calendar_command(&o.words)?,
+        "calendar" => calendar_command(&o.words, o.one.get("refresh").and_then(|r| r.parse().ok()))?,
         "import" => {
             let file = o.words.first().ok_or("import needs a file")?;
             let text = fs::read_to_string(file).map_err(|x| format!("{file}: {x}"))?;
@@ -544,8 +557,8 @@ fn run_command(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `fili-cal calendar list|add NAME [COLOR]|rename NAME NEW|color NAME TONE|hide NAME|show NAME|rm NAME`
-fn calendar_command(w: &[String]) -> Result<(), String> {
+/// `fili-cal calendar list|add NAME [COLOR]|subscribe LINK NAME [COLOR] [--refresh MINUTES]|sync [NAME]|rename NAME NEW|color NAME TONE|hide NAME|show NAME|rm NAME`
+fn calendar_command(w: &[String], refresh: Option<u32>) -> Result<(), String> {
     let need = |i: usize, what: &str| w.get(i).cloned().ok_or(format!("calendar: {what} is missing"));
     let slug = |i: usize| -> Result<String, String> {
         let name = need(i, "the calendar")?;
@@ -558,6 +571,13 @@ fn calendar_command(w: &[String]) -> Result<(), String> {
             }
         }
         "add" => println!("{}", calendars::create(&need(1, "the name")?, w.get(2).map_or("", String::as_str))?.slug),
+        "subscribe" => {
+            let c = calendars::subscribe(&need(2, "the name")?, &need(1, "the link")?, w.get(3).map_or("", String::as_str), refresh)?;
+            println!("{}", c.slug);
+            // the first fetch happens now, in the background
+            subscribe::spawn_due();
+        }
+        "sync" => subscribe::sync_command(w.get(1).map(String::as_str))?,
         "rename" => calendars::update(&slug(1)?, "name", &need(2, "the new name")?)?,
         "color" => calendars::update(&slug(1)?, "color", &need(2, "the tone")?)?,
         "hide" => calendars::update(&slug(1)?, "hidden", "true")?,

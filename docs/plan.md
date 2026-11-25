@@ -67,6 +67,10 @@ rename and colour change are not in the journal, deleting a calendar goes to the
 
 ## P3. Sources: subscriptions and accounts
 
+**Status (2026-11-25): P3.1 done** (subscription = a calendar with `url` in `calendar.conf`; `curl` fetch started by `tick` in a process of
+its own; `ETag`/`Last-Modified`; the last good copy stays; read-only events; `calendar subscribe|sync`, "Refresh Subscriptions", Ctrl+R).
+Not done yet: P3.2 CalDAV, P3.3 import/export from the menu and drop, P3.4 handler of `text/calendar` and `webcal:`.
+
 1. **ICS subscriptions** (read-only): URL, refresh every N minutes by `fili-cal tick` (conditional requests with `ETag` / `Last-Modified`,
    an offline copy kept). This replaces the user-layer `cal-notify` / Proton plugin: the Proton private link becomes a
    subscription in the user layer (`users/<login>/`), never in the distribution. The clock card keeps reading the same agenda file.

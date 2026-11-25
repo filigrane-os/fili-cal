@@ -16,6 +16,10 @@ pub struct Calendar {
     pub name: String,
     pub color: String,
     pub hidden: bool,
+    /// A subscription: the link of an iCalendar file that is fetched now and then. Its events are read-only.
+    pub url: Option<String>,
+    /// Minutes between two fetches of a subscription
+    pub refresh: u32,
 }
 
 pub fn dir_of(slug: &str) -> PathBuf {
@@ -34,12 +38,18 @@ fn read_meta(slug: &str) -> Calendar {
         name: get("name").filter(|n| !n.is_empty()).unwrap_or_else(|| if slug == DEFAULT { crate::i18n::tr("Personal").to_string() } else { slug.to_string() }),
         color: get("color").filter(|c| TONES.contains(&c.as_str())).unwrap_or_else(|| "default".into()),
         hidden: get("hidden").is_some_and(|h| h == "true"),
+        url: get("url").filter(|u| !u.is_empty()),
+        refresh: get("refresh").and_then(|r| r.parse().ok()).filter(|r| *r >= 5).unwrap_or(60),
     }
 }
 
 fn write_meta(c: &Calendar) -> Result<(), String> {
     fs::create_dir_all(dir_of(&c.slug)).map_err(|e| e.to_string())?;
-    fs::write(dir_of(&c.slug).join("calendar.conf"), format!("name = {}\ncolor = {}\nhidden = {}\n", c.name.replace('\n', " "), c.color, c.hidden)).map_err(|e| e.to_string())
+    let mut text = format!("name = {}\ncolor = {}\nhidden = {}\n", c.name.replace('\n', " "), c.color, c.hidden);
+    if let Some(u) = &c.url {
+        text += &format!("url = {}\nrefresh = {}\n", u.replace(['\n', '\r'], ""), c.refresh);
+    }
+    fs::write(dir_of(&c.slug).join("calendar.conf"), text).map_err(|e| e.to_string())
 }
 
 /// Moves the `.ics` files of the flat folder of the first version into the default calendar
@@ -52,7 +62,7 @@ fn migrate() {
     let target = dir_of(DEFAULT);
     let _ = fs::create_dir_all(&target);
     if !target.join("calendar.conf").exists() {
-        let _ = write_meta(&Calendar { slug: DEFAULT.into(), name: "Personal".into(), color: "default".into(), hidden: false });
+        let _ = write_meta(&Calendar { slug: DEFAULT.into(), name: "Personal".into(), color: "default".into(), hidden: false, url: None, refresh: 60 });
     }
     for p in flat {
         if let Some(name) = p.file_name() {
@@ -100,7 +110,7 @@ pub fn create(name: &str, color: &str) -> Result<Calendar, String> {
         n += 1;
     }
     let color = if TONES.contains(&color) { color } else { TONES[1 + list().len() % (TONES.len() - 1)] };
-    let c = Calendar { slug, name: name.to_string(), color: color.to_string(), hidden: false };
+    let c = Calendar { slug, name: name.to_string(), color: color.to_string(), hidden: false, url: None, refresh: 60 };
     write_meta(&c)?;
     Ok(c)
 }
@@ -125,6 +135,7 @@ pub fn update(slug: &str, key: &str, value: &str) -> Result<(), String> {
         "color" if TONES.contains(&value) => c.color = value.to_string(),
         "color" => return Err(format!("color: {}", TONES.join(", "))),
         "hidden" => c.hidden = value == "true",
+        "refresh" => c.refresh = value.parse::<u32>().ok().filter(|r| *r >= 5).ok_or("refresh: minutes, at least 5")?,
         _ => return Err(format!("unknown field: {key}")),
     }
     write_meta(&c)
@@ -143,8 +154,40 @@ pub fn remove(slug: &str) -> Result<(), String> {
     if ok { Ok(()) } else { Err(crate::i18n::tr("the trash is not available").to_string()) }
 }
 
+/// A subscription: `https://…` or `webcal://…` (a link is a secret: it is never printed or logged)
+pub fn subscribe(name: &str, url: &str, color: &str, refresh: Option<u32>) -> Result<Calendar, String> {
+    let url = url.trim();
+    let url = url.strip_prefix("webcal://").map_or_else(|| url.to_string(), |r| format!("https://{r}"));
+    if !(url.starts_with("https://") || url.starts_with("http://")) || url.contains(char::is_whitespace) {
+        return Err(crate::i18n::tr("a subscription needs an https:// or webcal:// link").to_string());
+    }
+    let mut c = create(name, color)?;
+    c.url = Some(url);
+    c.refresh = refresh.filter(|r| *r >= 5).unwrap_or(60);
+    write_meta(&c)?;
+    Ok(c)
+}
+
+/// The calendar of a folder (slug), when it is a subscription
+pub fn subscription(slug: &str) -> Option<Calendar> {
+    if !valid_slug(slug) {
+        return None;
+    }
+    Some(read_meta(slug)).filter(|c| c.url.is_some())
+}
+
 pub fn json() -> String {
-    serde_json::Value::Array(list().iter().map(|c| serde_json::json!({"slug": c.slug, "name": c.name, "color": c.color, "hidden": c.hidden})).collect()).to_string()
+    serde_json::Value::Array(
+        list()
+            .iter()
+            .map(|c| {
+                let st = crate::subscribe::state(&c.slug);
+                serde_json::json!({"slug": c.slug, "name": c.name, "color": c.color, "hidden": c.hidden, "subscribed": c.url.is_some(),
+                    "fetched": st.fetched, "error": st.error})
+            })
+            .collect(),
+    )
+    .to_string()
 }
 
 #[cfg(test)]

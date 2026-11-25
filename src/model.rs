@@ -22,7 +22,7 @@ fn parse_start(s: &str) -> Result<(NaiveDateTime, bool), String> {
     parse_day(s).map(|d| (d, true)).ok_or_else(|| format!("bad date: {s}"))
 }
 
-fn one(id: &str, e: &Event, occ: NaiveDateTime, color: &str) -> Value {
+fn one(id: &str, e: &Event, occ: NaiveDateTime, color: &str, readonly: bool) -> Value {
     let end = e.end_of(occ);
     // `start`, `end`, `occ` and `first` are what the views show (system zone); `zstart` and `zend` are the same time in the
     // zone of the event (`tz`, empty = floating), which the editor shows
@@ -31,7 +31,7 @@ fn one(id: &str, e: &Event, occ: NaiveDateTime, color: &str) -> Value {
         "id": id, "title": e.summary, "start": occ.format(MINUTE).to_string(),
         "end": end.map(|x| x.format(MINUTE).to_string()), "allDay": e.all_day, "place": e.place, "note": e.note,
         "tz": e.tzid.clone().unwrap_or_default(),
-        "calendar": if e.calendar.is_empty() { calendars::DEFAULT } else { &e.calendar }, "color": color, "zstart": zone_of(occ), "zend": end.map(zone_of),
+        "calendar": if e.calendar.is_empty() { calendars::DEFAULT } else { &e.calendar }, "color": color, "readonly": readonly, "zstart": zone_of(occ), "zend": end.map(zone_of),
         "alarms": e.alarms, "every": e.rule.as_ref().map_or("", |r| freq_word(r.freq)),
         "interval": e.rule.as_ref().map_or(1, |r| r.interval), "count": e.rule.as_ref().and_then(|r| r.count),
         "until": e.rule.as_ref().and_then(|r| r.until).map(|u| u.format(MINUTE).to_string()),
@@ -67,7 +67,7 @@ pub fn events_json_of(all: &[(String, Event)], from: &str, to: &str) -> String {
             continue;
         }
         for occ in ics::occurrences(e, from, to) {
-            rows.push((occ, e.summary.clone(), one(id, e, occ, &cal.color)));
+            rows.push((occ, e.summary.clone(), one(id, e, occ, &cal.color, cal.url.is_some())));
         }
     }
     rows.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));

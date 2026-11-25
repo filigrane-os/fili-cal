@@ -49,6 +49,11 @@
      "keys": "Ctrl+Alt+N"
     },
     {
+     "label": "Refresh Subscriptions",
+     "exec": "fili-cal ctl --pid %pid action refresh-calendars",
+     "keys": "Ctrl+R"
+    },
+    {
      "sep": true
     },
     {

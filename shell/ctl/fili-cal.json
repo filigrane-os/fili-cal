@@ -73,6 +73,11 @@
       "keys": "Ctrl+Shift+Z"
     },
     {
+      "name": "refresh-calendars",
+      "label": "Refresh Subscriptions",
+      "keys": "Ctrl+R"
+    },
+    {
       "name": "new-calendar",
       "label": "New Calendar…",
       "keys": "Ctrl+Alt+N"

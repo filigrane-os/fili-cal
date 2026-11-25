@@ -137,7 +137,11 @@ pub mod qobject {
         // Creates a calendar; returns its slug, empty when it failed (see message)
         #[qinvokable]
         #[cxx_name = "calendarAdd"]
-        fn calendar_add(self: Pin<&mut Agenda>, name: &QString, color: &QString) -> QString;
+        fn calendar_add(self: Pin<&mut Agenda>, name: &QString, color: &QString, url: &QString) -> QString;
+        // Fetches the subscriptions now (in the background); the files are read again a little later
+        #[qinvokable]
+        #[cxx_name = "syncNow"]
+        fn sync_now(self: &Agenda);
         // Changes `name`, `color` or `hidden` ("true"/"false") of a calendar
         #[qinvokable]
         #[cxx_name = "calendarSet"]
@@ -566,8 +570,22 @@ impl qobject::Agenda {
         QString::from(&crate::calendars::json())
     }
 
-    pub fn calendar_add(mut self: Pin<&mut Self>, name: &QString, color: &QString) -> QString {
-        match crate::calendars::create(&name.to_string(), &color.to_string()) {
+    pub fn sync_now(&self) {
+        // every subscription, due or not: a process of its own that waits for none
+        if let Ok(exe) = std::env::current_exe() {
+            for c in crate::calendars::list().iter().filter(|c| c.url.is_some()) {
+                let _ = std::process::Command::new(&exe).args(["calendar", "sync", &c.slug]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+            }
+        }
+    }
+
+    pub fn calendar_add(mut self: Pin<&mut Self>, name: &QString, color: &QString, url: &QString) -> QString {
+        let url = url.to_string();
+        let made = if url.trim().is_empty() { crate::calendars::create(&name.to_string(), &color.to_string()) } else { crate::calendars::subscribe(&name.to_string(), &url, &color.to_string(), None) };
+        if made.is_ok() && !url.trim().is_empty() {
+            self.sync_now();
+        }
+        match made {
             Ok(c) => {
                 self.as_mut().refresh();
                 QString::from(&c.slug)

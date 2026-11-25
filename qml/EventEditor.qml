@@ -13,6 +13,8 @@ FiliDialog {
     // Start of the first occurrence of a series (the series moves by as many days as the date of this occurrence)
     property string first: ""
     property bool series: false
+    // The event comes from a subscription: it can be read, not changed
+    property bool readOnly: false
     // The calendars [{slug, name, color, hidden}] and the one the event is in
     property var calendars: []
     property string calendar: "personal"
@@ -30,7 +32,7 @@ FiliDialog {
     title: isNew ? Fili.tr("New event") : Fili.tr("Event")
     confirmLabel: Fili.tr("Save")
     cardWidth: 460
-    confirmEnabled: titleField.text.trim() !== "" && startOk && endOk && lastOk && zoneOk
+    confirmEnabled: !readOnly && titleField.text.trim() !== "" && startOk && endOk && lastOk && zoneOk
     readonly property bool dateOk: /^\d{4}-\d{2}-\d{2}$/.test(dateField.text) && !isNaN(tools.parse(dateField.text).getTime())
     readonly property bool timeOk: /^([01]\d|2[0-3]):[0-5]\d$/.test(startField.text)
     readonly property bool startOk: dateOk && (allDay || timeOk)
@@ -55,6 +57,7 @@ FiliDialog {
         eventId = ev.id;
         occ = ev.occ;
         calendar = ev.calendar;
+        readOnly = ev.readonly === true;
         first = ev.zfirst;
         occZ = ev.zstart;
         series = ev.series;
@@ -85,7 +88,8 @@ FiliDialog {
         first = "";
         series = false;
         occZ = "";
-        calendar = (calendars.find(c => !c.hidden) || { slug: "personal" }).slug;
+        readOnly = false;
+        calendar = (calendars.find(c => !c.hidden && !c.subscribed) || { slug: "personal" }).slug;
         custom = false;
         rrule = "";
         alertsRest = [];
@@ -144,6 +148,15 @@ FiliDialog {
         Row { id: slot; spacing: FiliTheme.space2 }
     }
 
+    Text {
+        visible: ed.readOnly
+        width: parent.width
+        wrapMode: Text.WordWrap
+        text: Fili.tr("This event comes from a subscription: it cannot be changed here.")
+        font.family: FiliTheme.font
+        font.pixelSize: FiliTheme.sizeSmall
+        color: FiliTheme.muted
+    }
     FiliTextField { id: titleField; width: parent.width; placeholder: Fili.tr("Title"); onAccepted: ed.accept() }
     Row2 {
         label: Fili.tr("All day")
@@ -173,7 +186,7 @@ FiliDialog {
     Row2 {
         visible: ed.calendars.length > 1
         label: Fili.tr("Calendar")
-        FiliSelect { width: 200; model: ed.calendars.map(c => ({ label: c.name, value: c.slug })); current: ed.calendar; onPicked: v => ed.calendar = v }
+        FiliSelect { width: 200; model: ed.calendars.filter(c => !c.subscribed || c.slug === ed.calendar).map(c => ({ label: c.name, value: c.slug })); current: ed.calendar; onPicked: v => ed.calendar = v }
     }
     Row2 {
         label: Fili.tr("Repeat")
@@ -210,7 +223,7 @@ FiliDialog {
         FiliTextField { id: noteField; width: ed.cardWidth - 2 * FiliTheme.space5 - 84 - FiliTheme.space3; placeholder: Fili.tr("Notes"); onAccepted: ed.accept() }
     }
     Row {
-        visible: !ed.isNew
+        visible: !ed.isNew && !ed.readOnly
         spacing: FiliTheme.space2
         FiliButton { label: ed.series ? Fili.tr("Delete this occurrence") : Fili.tr("Delete"); onClicked: { ed.close(); ed.deleted(ed.eventId, ed.occ, false); } }
         FiliButton { visible: ed.series; label: Fili.tr("Delete the series"); onClicked: { ed.close(); ed.deleted(ed.eventId, ed.occ, true); } }

@@ -60,9 +60,9 @@ ApplicationWindow {
     property var calendars: JSON.parse(cal.calendars())
     function reloadCalendars() { calendars = JSON.parse(cal.calendars()); }
     function setCalendar(slug, key, value) { if (cal.calendarSet(slug, key, value)) { reloadCalendars(); soon.refresh(); } }
-    function saveCalendar(slug, name, color) {
+    function saveCalendar(slug, name, color, url) {
         if (slug === "") {
-            const s = cal.calendarAdd(name, color);
+            const s = cal.calendarAdd(name, color, url);
             if (s === "")
                 return;
         } else {
@@ -200,6 +200,7 @@ ApplicationWindow {
         "new-event": { on: () => !win.typing, run: () => win.newEvent() },
         "undo": { on: () => !win.typing && JSON.parse(cal.undoState()).undo, run: () => { cal.undo(); soon.refresh(); } },
         "redo": { on: () => !win.typing && JSON.parse(cal.undoState()).redo, run: () => { cal.redo(); soon.refresh(); } },
+        "refresh-calendars": { on: () => win.calendars.some(c => c.subscribed), run: () => { cal.syncNow(); } },
         "new-calendar": { on: () => !win.typing, run: () => calendarDialog.create() },
         "quick-add": { on: () => !win.typing, run: () => quick.start() },
         "settings": { on: () => true, run: () => Fili.openSettings() },
@@ -244,6 +245,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+W"; onActivated: win.quit() }
     Shortcut { sequence: "Ctrl+Q"; onActivated: win.quit() }
     Shortcut { sequence: "Ctrl+N"; enabled: !win.typing; onActivated: win.runAction("new-event") }
+    Shortcut { sequence: "Ctrl+R"; enabled: !win.typing; onActivated: win.runAction("refresh-calendars") }
     Shortcut { sequence: "Ctrl+Alt+N"; enabled: !win.typing; onActivated: win.runAction("new-calendar") }
     Shortcut { sequence: "Ctrl+Shift+N"; enabled: !win.typing; onActivated: win.runAction("quick-add") }
     Shortcut { sequence: "Ctrl+Z"; enabled: !win.typing; onActivated: win.runAction("undo") }
@@ -633,7 +635,8 @@ ApplicationWindow {
         CalendarDialog {
             id: calendarDialog
             tools: tools
-            onSaved: (slug, name, color) => win.saveCalendar(slug, name, color)
+            onSaved: (slug, name, color, url) => win.saveCalendar(slug, name, color, url)
+            onRefreshRequested: win.runAction("refresh-calendars")
             onDeleted: slug => { if (cal.calendarRemove(slug)) { win.reloadCalendars(); soon.refresh(); } }
         }
         EventEditor {

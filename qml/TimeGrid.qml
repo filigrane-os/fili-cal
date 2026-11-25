@@ -229,7 +229,8 @@ Item {
                             function content(m) { return mapToItem(flick.contentItem, m.x, m.y); }
                             onPressed: m => { from = content(m); moving = false; forceActiveFocus(); }
                             onPositionChanged: m => {
-                                if (!pressed)
+                                // the events of a subscription cannot be moved
+                                if (!pressed || blk.modelData.ev.readonly)
                                     return;
                                 const p = content(m);
                                 if (!moving && Math.hypot(p.x - from.x, p.y - from.y) < 6)
@@ -257,7 +258,7 @@ Item {
                         }
                         // The bottom edge: dragging it changes the length (a reminder has none)
                         MouseArea {
-                            visible: !blk.reminder
+                            visible: !blk.reminder && !blk.modelData.ev.readonly
                             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
                             height: 7
                             cursorShape: Qt.SizeVerCursor
