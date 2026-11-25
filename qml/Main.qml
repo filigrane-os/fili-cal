@@ -82,7 +82,20 @@ ApplicationWindow {
     onViewModeChanged: Qt.callLater(reload)
     function reload() { cal.load(tools.iso(rangeStart), tools.iso(rangeEnd)); }
     function reloadSoon() { soon.load(tools.iso(today), tools.iso(tools.addDays(today, 14))); }
-    Component.onCompleted: { reload(); reloadSoon(); }
+    Component.onCompleted: {
+        reload();
+        reloadSoon();
+        // handed a file or a link by the system (text/calendar, webcal:)
+        if (cal.startupSource() !== "")
+            Qt.callLater(() => importDialog.show(cal.startupSource()));
+    }
+    // A file dropped on the window: its import preview
+    DropArea {
+        anchors.fill: parent
+        z: 1000
+        keys: ["text/uri-list"]
+        onDropped: drop => { if (drop.hasUrls && drop.urls.length > 0) importDialog.show(drop.urls[0].toString()); }
+    }
     // `fili-cal --shot FILE [view]`: draws the window into a PNG and quits (documentation, tests without a screen)
     Timer {
         readonly property var args: Qt.application.arguments
@@ -201,6 +214,9 @@ ApplicationWindow {
         "undo": { on: () => !win.typing && JSON.parse(cal.undoState()).undo, run: () => { cal.undo(); soon.refresh(); } },
         "redo": { on: () => !win.typing && JSON.parse(cal.undoState()).redo, run: () => { cal.redo(); soon.refresh(); } },
         "refresh-calendars": { on: () => win.calendars.some(c => c.subscribed || c.account), run: () => { cal.syncNow(); } },
+        "import": { on: () => !win.typing, run: () => importDialog.show("") },
+        "import-file": { on: () => true, run: rest => { importDialog.show(rest); win.raise(); } },
+        "export": { on: () => !win.typing, run: () => exportDialog.start() },
         "add-account": { on: () => !win.typing, run: () => accountDialog.start() },
         "new-calendar": { on: () => !win.typing, run: () => calendarDialog.create() },
         "quick-add": { on: () => !win.typing, run: () => quick.start() },
@@ -214,13 +230,13 @@ ApplicationWindow {
         "window-actions": { on: () => win.windowButtons, run: () => windowPanel.visible ? windowPanel.close() : windowPanel.open() },
         "close": { on: () => true, run: () => win.quit() }
     })
-    function runAction(name) {
+    function runAction(name, rest) {
         const a = actions[name];
         if (!a)
             return { ok: false, error: "unknown action: " + name + " (fili-cal ctl actions lists them)" };
         if (!a.on())
             return { ok: false, error: "action disabled now: " + name };
-        a.run();
+        a.run(rest);
         return { ok: true };
     }
     function stateJson() {
@@ -231,7 +247,7 @@ ApplicationWindow {
         function onCommand(id, verb, arg) {
             let answer;
             if (verb === "action")
-                answer = win.runAction(arg.split(" ")[0]);
+                answer = win.runAction(arg.split(" ")[0], arg.split(" ").slice(1).join(" "));
             else if (verb === "actions")
                 answer = { ok: true, actions: Object.keys(win.actions).map(n => ({ name: n, enabled: win.actions[n].on() })) };
             else if (verb === "state")
@@ -247,6 +263,8 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+Q"; onActivated: win.quit() }
     Shortcut { sequence: "Ctrl+N"; enabled: !win.typing; onActivated: win.runAction("new-event") }
     Shortcut { sequence: "Ctrl+Alt+A"; enabled: !win.typing; onActivated: win.runAction("add-account") }
+    Shortcut { sequence: "Ctrl+I"; enabled: !win.typing; onActivated: win.runAction("import") }
+    Shortcut { sequence: "Ctrl+E"; enabled: !win.typing; onActivated: win.runAction("export") }
     Shortcut { sequence: "Ctrl+R"; enabled: !win.typing; onActivated: win.runAction("refresh-calendars") }
     Shortcut { sequence: "Ctrl+Alt+N"; enabled: !win.typing; onActivated: win.runAction("new-calendar") }
     Shortcut { sequence: "Ctrl+Shift+N"; enabled: !win.typing; onActivated: win.runAction("quick-add") }
@@ -401,6 +419,16 @@ ApplicationWindow {
             }
             FiliSidebarSection {
                 title: Fili.tr("Calendars")
+                // The usual "+" of a list of calendars: a small menu to make one, or to add an account
+                trailing: FiliIconButton {
+                    id: addCalendarButton
+                    name: "plus"
+                    tip: Fili.tr("Add a calendar or an account")
+                    onClicked: {
+                        const p = addCalendarButton.mapToItem(addMenu.parent, 0, addCalendarButton.height);
+                        addMenu.open(p.x - addMenu.menuWidth + addCalendarButton.width, p.y + 2, [{ id: "calendar", label: Fili.tr("New calendar…") }, { id: "account", label: Fili.tr("Add account…") }]);
+                    }
+                }
                 Repeater {
                     model: win.calendars
                     Item {
@@ -442,34 +470,6 @@ ApplicationWindow {
                         MouseArea { id: calArea; anchors { fill: parent; leftMargin: calBox.x + calBox.width + 6 }
                             hoverEnabled: true; onClicked: calendarDialog.edit(calRow.modelData) }
                     }
-                }
-                Text {
-                    x: FiliTheme.margin
-                    text: Fili.tr("Add account…")
-                    font.family: FiliTheme.font
-                    font.pixelSize: FiliTheme.sizeSmall
-                    color: FiliTheme.muted
-                    MouseArea {
-                        anchors.fill: parent
-                        anchors.margins: -4
-                        onClicked: accountDialog.start()
-                    }
-                    Accessible.role: Accessible.Button
-                    Accessible.name: Fili.tr("Add account…")
-                }
-                Text {
-                    x: FiliTheme.margin
-                    text: Fili.tr("New calendar…")
-                    font.family: FiliTheme.font
-                    font.pixelSize: FiliTheme.sizeSmall
-                    color: FiliTheme.muted
-                    MouseArea {
-                        anchors.fill: parent
-                        anchors.margins: -4
-                        onClicked: calendarDialog.create()
-                    }
-                    Accessible.role: Accessible.Button
-                    Accessible.name: Fili.tr("New calendar…")
                 }
             }
             FiliSidebarSection {
@@ -648,9 +648,25 @@ ApplicationWindow {
             }
         }
 
+        ImportDialog {
+            id: importDialog
+            backend: cal
+            calendars: win.calendars
+            onImported: (source, calendar) => { cal.importSource(source, calendar); soon.refresh(); }
+        }
+        ExportDialog {
+            id: exportDialog
+            calendars: win.calendars
+            onExported: (calendar, path) => cal.exportTo(calendar, path)
+        }
+        FiliMenu {
+            id: addMenu
+            onActivated: id => { if (id === "calendar") calendarDialog.create(); else accountDialog.start(); }
+        }
         AccountDialog {
             id: accountDialog
             onConnect: (address, user, password) => cal.accountConnect(address, user, password)
+            onSubscribe: (name, link) => { cal.calendarAdd(name, "", link); win.reloadCalendars(); }
         }
         CalendarDialog {
             id: calendarDialog

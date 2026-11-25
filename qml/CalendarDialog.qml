@@ -27,7 +27,6 @@ FiliDialog {
     function create() {
         slug = "";
         status = "";
-        urlField.text = "";
         color = tones[1 + Math.floor(Math.random() * (tones.length - 1))];
         nameField.text = "";
         open();
@@ -36,7 +35,6 @@ FiliDialog {
     function edit(c) {
         slug = c.slug;
         color = c.color;
-        urlField.text = "";
         status = !(c.subscribed || c.account) ? "" : c.error !== "" ? Fili.tr("Last fetch failed: %1").replace("%1", c.error) : c.fetched > 0 ? Fili.tr("Updated %1").replace("%1", new Date(c.fetched * 1000).toLocaleString(Qt.locale(), Locale.ShortFormat)) : Fili.tr("Not fetched yet");
         subscribed = c.subscribed;
         account = c.account;
@@ -44,19 +42,9 @@ FiliDialog {
         open();
         nameField.focusField();
     }
-    onAccepted: saved(slug, nameField.text.trim(), color, urlField.text.trim())
+    onAccepted: saved(slug, nameField.text.trim(), color, "")
 
     FiliTextField { id: nameField; width: parent.width; placeholder: Fili.tr("Name"); onAccepted: dlg.accept() }
-    FiliTextField { id: urlField; visible: dlg.isNew; width: parent.width; placeholder: Fili.tr("Link to subscribe to (optional)"); onAccepted: dlg.accept() }
-    Text {
-        visible: dlg.isNew
-        width: parent.width
-        wrapMode: Text.WordWrap
-        text: Fili.tr("A link (https:// or webcal://) makes a read-only calendar that is fetched now and then.")
-        font.family: FiliTheme.font
-        font.pixelSize: FiliTheme.sizeSmall
-        color: FiliTheme.muted
-    }
     Text {
         visible: dlg.status !== ""
         width: parent.width

@@ -85,6 +85,15 @@ fn fetch(url: &str, st: &State) -> Result<(u16, String, Vec<u8>), String> {
     Ok((code, dump, bytes))
 }
 
+/// The text of a link, once (an import, not a subscription)
+pub fn download(url: &str) -> Result<String, String> {
+    let (code, _, body) = fetch(url, &State::default())?;
+    if code != 200 {
+        return Err(crate::i18n::trf("the server answered %1", &[&code]));
+    }
+    Ok(String::from_utf8_lossy(&body).to_string())
+}
+
 /// Writes the events of a downloaded file as the files of the calendar: the ones that changed, and no more of the ones that
 /// went away. Returns how many events there are.
 pub fn store_events(slug: &str, text: &str) -> Result<usize, String> {

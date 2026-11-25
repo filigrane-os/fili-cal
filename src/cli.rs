@@ -31,7 +31,7 @@ use std::{
 
 use chrono::{Duration, NaiveDateTime, Timelike};
 use crate::ics::{self, Event, Freq, Rule};
-use crate::{calendars, dav, subscribe, undo, when};
+use crate::{calendars, dav, exchange, subscribe, undo, when};
 use serde_json::json;
 
 /// The tests that point the store at a folder of their own take turns
@@ -213,7 +213,7 @@ fn parse_opts(args: &[String]) -> Result<Opts, String> {
         match a.strip_prefix("--") {
             Some(name @ ("reminder" | "tsv" | "json")) => o.flags.push(name.to_string()),
             Some("alarm") => o.alarms.push(it.next().ok_or("--alarm needs a duration")?.clone()),
-            Some(name @ ("at" | "end" | "for" | "place" | "note" | "every" | "interval" | "count" | "until" | "title" | "on" | "from" | "to" | "days" | "calendar" | "refresh")) => {
+            Some(name @ ("at" | "end" | "for" | "place" | "note" | "every" | "interval" | "count" | "until" | "title" | "on" | "from" | "to" | "days" | "calendar" | "refresh" | "file")) => {
                 o.one.insert(name.to_string(), it.next().ok_or(format!("--{name} needs a value"))?.clone());
             }
             Some(other) => return Err(format!("unknown option: --{other}")),
@@ -528,30 +528,22 @@ fn run_command(args: &[String]) -> Result<(), String> {
         "tick" => tick()?,
         "calendar" => calendar_command(&o.words, o.one.get("refresh").and_then(|r| r.parse().ok()))?,
         "import" => {
-            let file = o.words.first().ok_or("import needs a file")?;
-            let text = fs::read_to_string(file).map_err(|x| format!("{file}: {x}"))?;
-            let events = ics::parse_ics(&text);
-            for e in &events {
-                save(&short_hash(&e.uid), e)?;
-            }
-            println!("{}", events.len());
-            let _ = tick();
+            let file = o.words.first().ok_or("import needs a file or a link")?;
+            let (added, replaced) = exchange::import(file, o.one.get("calendar").map_or("", String::as_str))?;
+            println!("{}", added + replaced);
         }
         "export" => {
-            let list: Vec<Event> = match o.words.first() {
-                Some(id) => vec![load(id)?],
-                None => load_all().into_iter().map(|(_, e)| e).collect(),
+            let text = match o.words.first() {
+                Some(id) => {
+                    // one event
+                    ics::to_ics(&load(id)?)
+                }
+                None => exchange::export(o.one.get("calendar").map(String::as_str))?,
             };
-            // one calendar with every event: the VEVENT blocks of each file inside a single VCALENDAR
-            let mut out = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Filigrane//fili-cal//EN\r\n");
-            for e in &list {
-                let t = ics::to_ics(e);
-                let a = t.find("BEGIN:VEVENT").unwrap_or(0);
-                let b = t.rfind("END:VCALENDAR").unwrap_or(t.len());
-                out.push_str(&t[a..b]);
+            match o.one.get("file") {
+                Some(f) => println!("{}", exchange::export_to_text(&text, f)?),
+                None => print!("{text}"),
             }
-            out.push_str("END:VCALENDAR\r\n");
-            print!("{out}");
         }
         "-h" | "--help" | "help" => {
             println!("fili-cal add|edit|rm|show|list|next|tick|import|export|undo|redo (see the header of apps/fili-cal/src/main.rs)");

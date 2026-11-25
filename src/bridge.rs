@@ -138,6 +138,22 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "calendarAdd"]
         fn calendar_add(self: Pin<&mut Agenda>, name: &QString, color: &QString, url: &QString) -> QString;
+        // What importing a file or a link would add, as JSON {ok, error?, count, events: [{title, start, allDay, place, every}]}
+        #[qinvokable]
+        #[cxx_name = "previewImport"]
+        fn preview_import(self: &Agenda, source: &QString) -> QString;
+        // Adds the events of a file or link to a calendar (slug); false when it failed (see message)
+        #[qinvokable]
+        #[cxx_name = "importSource"]
+        fn import_source(self: Pin<&mut Agenda>, source: &QString, calendar: &QString) -> bool;
+        // Writes the events of a calendar (slug, "all" = every one) to a file or into a folder; false when it failed
+        #[qinvokable]
+        #[cxx_name = "exportTo"]
+        fn export_to(self: Pin<&mut Agenda>, calendar: &QString, path: &QString) -> bool;
+        // The file or link Agenda was started with (a text/calendar file handed over by the system), empty otherwise
+        #[qinvokable]
+        #[cxx_name = "startupSource"]
+        fn startup_source(self: &Agenda) -> QString;
         // Connects a CalDAV account (address, user, password) in a process of its own: the calendars of the account appear when
         // it is done, and `message` says how it went. The password goes to the keyring, nowhere else.
         #[qinvokable]
@@ -583,6 +599,47 @@ impl qobject::Agenda {
 
     pub fn calendars(&self) -> QString {
         QString::from(&crate::calendars::json())
+    }
+
+    pub fn preview_import(&self, source: &QString) -> QString {
+        QString::from(&crate::exchange::preview(&source.to_string()).to_string())
+    }
+
+    pub fn import_source(mut self: Pin<&mut Self>, source: &QString, calendar: &QString) -> bool {
+        match crate::exchange::import(&source.to_string(), &calendar.to_string()) {
+            Ok((added, replaced)) => {
+                self.as_mut().refresh();
+                let text = if replaced == 0 { i18n::trf("Imported %1 events", &[&added]) } else { i18n::trf("Imported %1 events, %2 replaced", &[&(added + replaced), &replaced]) };
+                self.as_mut().rust_mut().message = QString::from(&text);
+                self.as_mut().rust_mut().failed = false;
+                self.as_mut().changed();
+                true
+            }
+            Err(e) => {
+                self.as_mut().fail(e);
+                false
+            }
+        }
+    }
+
+    pub fn export_to(mut self: Pin<&mut Self>, calendar: &QString, path: &QString) -> bool {
+        let cal = calendar.to_string();
+        match crate::exchange::export_to(Some(&cal), &path.to_string()) {
+            Ok(file) => {
+                self.as_mut().rust_mut().message = QString::from(&i18n::trf("Exported to %1", &[&file]));
+                self.as_mut().rust_mut().failed = false;
+                self.as_mut().changed();
+                true
+            }
+            Err(e) => {
+                self.as_mut().fail(e);
+                false
+            }
+        }
+    }
+
+    pub fn startup_source(&self) -> QString {
+        QString::from(&std::env::var("FILI_CAL_OPEN").unwrap_or_default())
     }
 
     pub fn account_connect(mut self: Pin<&mut Self>, address: &QString, user: &QString, password: &QString) {

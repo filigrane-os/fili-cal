@@ -62,6 +62,19 @@
      "sep": true
     },
     {
+     "label": "Import\u2026",
+     "exec": "fili-cal ctl --pid %pid action import",
+     "keys": "Ctrl+I"
+    },
+    {
+     "label": "Export\u2026",
+     "exec": "fili-cal ctl --pid %pid action export",
+     "keys": "Ctrl+E"
+    },
+    {
+     "sep": true
+    },
+    {
      "label": "Close",
      "exec": "fili-cal ctl --pid %pid action close",
      "keys": "Ctrl+W"

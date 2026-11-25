@@ -8,6 +8,7 @@ mod calendars;
 mod cli;
 mod ctl;
 mod dav;
+mod exchange;
 mod i18n;
 mod ics;
 mod logs;
@@ -59,6 +60,19 @@ fn main() {
             return;
         }
         _ => {}
+    }
+    // A file or a link to open (what the system gives a handler of text/calendar and webcal:): the open window shows its import
+    // preview, or the new one does
+    if let Some(src) = args.iter().skip(1).find(|a| !a.starts_with("--") && (a.starts_with("webcal:") || a.starts_with("webcals:") || a.starts_with("file:") || a.starts_with("http") || std::path::Path::new(a).is_file())) {
+        let abs = if src.contains("://") || src.starts_with("webcal") { src.clone() } else { std::fs::canonicalize(src).map_or_else(|_| src.clone(), |p| p.display().to_string()) };
+        if let Some(pid) = ctl::windows().first()
+            && ctl::client(&["--pid".to_string(), pid.to_string(), "action".to_string(), "import-file".to_string(), abs.clone()]).is_ok()
+        {
+            window::focus_pid(*pid);
+            return;
+        }
+        // SAFETY: nothing else runs yet, the application is not started
+        unsafe { std::env::set_var("FILI_CAL_OPEN", &abs) };
     }
     // One window: a second launch brings the open one to the front
     if let Some(pid) = ctl::windows().first()

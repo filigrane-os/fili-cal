@@ -72,6 +72,9 @@ its own; `ETag`/`Last-Modified`; the last good copy stays; read-only events; `ca
 P3.2 CalDAV done (own client in `src/dav.rs`, `curl` transport, password in the keyring, push then pull with ETags, server wins on
 conflict and the local copy goes to `<id>.conflict`, series with changed occurrences read-only; tried against `tests/fake-caldav.py`, not yet
 against Nextcloud, Fastmail or iCloud; Google needs OAuth and is not done: use its secret ICS link as a subscription).
+P3.3 and P3.4 done (Import/Export in the File menu, a file dropped on the window, `fili-cal FILE|webcal:LINK` opens the import
+preview in the open window, desktop entry handles `text/calendar` and `webcal:`; `import` and `export --file` on the command line).
+Add account is one dialog with a type (Nextcloud, Fastmail, iCloud, other CalDAV, Proton, Google, link); the sidebar has a "+" menu.
 Not done yet: P3.3 import/export from the menu and drop, P3.4 handler of `text/calendar` and `webcal:`.
 
 1. **ICS subscriptions** (read-only): URL, refresh every N minutes by `fili-cal tick` (conditional requests with `ETag` / `Last-Modified`,

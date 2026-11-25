@@ -78,6 +78,19 @@
       "keys": "Ctrl+R"
     },
     {
+      "name": "import",
+      "label": "Import…",
+      "keys": "Ctrl+I"
+    },
+    {
+      "name": "import-file"
+    },
+    {
+      "name": "export",
+      "label": "Export…",
+      "keys": "Ctrl+E"
+    },
+    {
       "name": "add-account",
       "label": "Add Account…",
       "keys": "Ctrl+Alt+A"

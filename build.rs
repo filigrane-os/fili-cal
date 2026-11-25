@@ -23,6 +23,8 @@ fn main() {
                 "qml/AccountDialog.qml",
                 "qml/CalendarDialog.qml",
                 "qml/EventEditor.qml",
+                "qml/ExportDialog.qml",
+                "qml/ImportDialog.qml",
             ])
             .depend("Fili.UI")
             .depend("QtQuick")
