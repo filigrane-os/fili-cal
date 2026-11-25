@@ -131,6 +131,21 @@ pub mod qobject {
         #[qinvokable]
         fn remove(self: Pin<&mut Agenda>, id: &QString, occ: &QString) -> bool;
         // Takes the last change back (Ctrl+Z) or does it again (Ctrl+Shift+Z); false when there is nothing to do (see message)
+        // The calendars as JSON [{slug, name, color, hidden}]; the colour is the name of an accent tone of the theme
+        #[qinvokable]
+        fn calendars(self: &Agenda) -> QString;
+        // Creates a calendar; returns its slug, empty when it failed (see message)
+        #[qinvokable]
+        #[cxx_name = "calendarAdd"]
+        fn calendar_add(self: Pin<&mut Agenda>, name: &QString, color: &QString) -> QString;
+        // Changes `name`, `color` or `hidden` ("true"/"false") of a calendar
+        #[qinvokable]
+        #[cxx_name = "calendarSet"]
+        fn calendar_set(self: Pin<&mut Agenda>, slug: &QString, key: &QString, value: &QString) -> bool;
+        // Deletes a calendar and its events (to the trash)
+        #[qinvokable]
+        #[cxx_name = "calendarRemove"]
+        fn calendar_remove(self: Pin<&mut Agenda>, slug: &QString) -> bool;
         // The `[agenda]` settings of fili-cal.toml as JSON (see settings.rs)
         #[qinvokable]
         fn settings(self: &Agenda) -> QString;
@@ -537,6 +552,47 @@ impl qobject::Agenda {
                 let text = if again { i18n::trf("Done again: %1", &[&label]) } else { i18n::trf("Undone: %1", &[&label]) };
                 self.as_mut().rust_mut().message = QString::from(&text);
                 self.as_mut().rust_mut().failed = false;
+                self.as_mut().changed();
+                true
+            }
+            Err(e) => {
+                self.as_mut().fail(e);
+                false
+            }
+        }
+    }
+
+    pub fn calendars(&self) -> QString {
+        QString::from(&crate::calendars::json())
+    }
+
+    pub fn calendar_add(mut self: Pin<&mut Self>, name: &QString, color: &QString) -> QString {
+        match crate::calendars::create(&name.to_string(), &color.to_string()) {
+            Ok(c) => {
+                self.as_mut().refresh();
+                QString::from(&c.slug)
+            }
+            Err(e) => {
+                self.as_mut().fail(e);
+                QString::default()
+            }
+        }
+    }
+
+    pub fn calendar_set(mut self: Pin<&mut Self>, slug: &QString, key: &QString, value: &QString) -> bool {
+        self.calendar_done(crate::calendars::update(&slug.to_string(), &key.to_string(), &value.to_string()))
+    }
+
+    pub fn calendar_remove(mut self: Pin<&mut Self>, slug: &QString) -> bool {
+        self.calendar_done(crate::calendars::remove(&slug.to_string()))
+    }
+
+    fn calendar_done(mut self: Pin<&mut Self>, result: Result<(), String>) -> bool {
+        match result {
+            Ok(()) => {
+                // the events of the views depend on which calendars are shown: reload even when the files did not change
+                self.as_mut().rust_mut().events = QString::from("[]");
+                self.as_mut().refresh();
                 self.as_mut().changed();
                 true
             }

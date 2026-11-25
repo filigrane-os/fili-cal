@@ -4,6 +4,7 @@
 use fili_ui as _;
 
 mod bridge;
+mod calendars;
 mod cli;
 mod ctl;
 mod i18n;
@@ -30,12 +31,12 @@ fn main() {
         }
         Some("-h" | "--help") => {
             println!(
-                "fili-cal {}: Agenda, the calendar and the reminders of Filigrane\n\nUsage: fili-cal [--no-header] [--no-footer]   open the window\n       fili-cal add|quick|edit|rm|show|list|next|tick|import|export ...   (fili-cal help)\n       fili-cal ctl [--pid PID] action NAME [ARG] | state | actions",
+                "fili-cal {}: Agenda, the calendar and the reminders of Filigrane\n\nUsage: fili-cal [--no-header] [--no-footer]   open the window\n       fili-cal add|quick|edit|rm|show|list|next|tick|calendar|import|export ...   (fili-cal help)\n       fili-cal ctl [--pid PID] action NAME [ARG] | state | actions",
                 env!("CARGO_PKG_VERSION")
             );
             return;
         }
-        Some("add" | "quick" | "edit" | "rm" | "show" | "list" | "next" | "tick" | "import" | "export" | "undo" | "redo" | "help") => {
+        Some("add" | "quick" | "edit" | "rm" | "show" | "list" | "next" | "tick" | "calendar" | "import" | "export" | "undo" | "redo" | "help") => {
             match cli::run(&args[1..]) {
                 Ok(()) => return,
                 Err(e) => {

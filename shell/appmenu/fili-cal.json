@@ -44,6 +44,11 @@
      "keys": "Ctrl+Shift+N"
     },
     {
+     "label": "New Calendar\u2026",
+     "exec": "fili-cal ctl --pid %pid action new-calendar",
+     "keys": "Ctrl+Alt+N"
+    },
+    {
      "sep": true
     },
     {

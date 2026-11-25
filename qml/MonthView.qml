@@ -97,16 +97,17 @@ Item {
                         width: parent.width
                         height: 16
                         radius: 4
-                        color: whole ? FiliTheme.accentColor : FiliTheme.alpha(FiliTheme.accentColor, chipArea.containsMouse ? 0.28 : 0.16)
+                        readonly property color tone: v.tools.colorOf(modelData)
+                        color: whole ? tone : FiliTheme.alpha(tone, chipArea.containsMouse ? 0.28 : 0.16)
                         opacity: cell.inMonth ? 1 : 0.55
-                        Rectangle { visible: !chip.whole; width: 3; height: parent.height - 4; y: 2; radius: 1.5; color: FiliTheme.accentColor }
+                        Rectangle { visible: !chip.whole; width: 3; height: parent.height - 4; y: 2; radius: 1.5; color: chip.tone }
                         Text {
                             anchors { left: parent.left; leftMargin: chip.whole ? 5 : 8; right: parent.right; rightMargin: 4; verticalCenter: parent.verticalCenter }
                             text: (chip.whole ? "" : v.tools.clock(chip.modelData) + " ") + chip.modelData.title
                             elide: Text.ElideRight
                             font.family: FiliTheme.font
                             font.pixelSize: FiliTheme.sizeSmall
-                            color: chip.whole ? (0.299 * FiliTheme.accentColor.r + 0.587 * FiliTheme.accentColor.g + 0.114 * FiliTheme.accentColor.b > 0.55 ? "#14181f" : "#ffffff") : FiliTheme.text
+                            color: chip.whole ? v.tools.inkOn(chip.tone) : FiliTheme.text
                         }
                         MouseArea {
                             id: chipArea

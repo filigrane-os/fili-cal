@@ -12,6 +12,7 @@ use crate::cli;
 const KEEP: u64 = 200;
 
 struct Change {
+    cal: String,
     id: String,
     before: Option<String>,
     after: Option<String>,
@@ -36,9 +37,9 @@ fn tx_path(n: u64) -> PathBuf {
 }
 
 /// A file of the store changed (None = it did not exist, or does not any more)
-pub fn record(id: &str, before: Option<String>, after: Option<String>) {
+pub fn record(cal: &str, id: &str, before: Option<String>, after: Option<String>) {
     if before != after {
-        pending().push(Change { id: id.to_string(), before, after });
+        pending().push(Change { cal: cal.to_string(), id: id.to_string(), before, after });
     }
 }
 
@@ -55,7 +56,7 @@ pub fn commit(label: &str) {
     while fs::remove_file(tx_path(gone)).is_ok() {
         gone += 1;
     }
-    let rows: Vec<Value> = changes.iter().map(|c| json!({"id": c.id, "before": c.before, "after": c.after})).collect();
+    let rows: Vec<Value> = changes.iter().map(|c| json!({"cal": c.cal, "id": c.id, "before": c.before, "after": c.after})).collect();
     let tx = json!({"label": label, "changes": rows});
     if fs::write(tx_path(n + 1), tx.to_string()).is_ok() {
         let _ = fs::write(d.join("cursor"), (n + 1).to_string());
@@ -65,11 +66,11 @@ pub fn commit(label: &str) {
     }
 }
 
-fn put(id: &str, text: &Option<String>) -> Result<(), String> {
-    let p = cli::path_of(id)?;
+fn put(cal: &str, id: &str, text: &Option<String>) -> Result<(), String> {
+    let p = cli::path_in(cal, id)?;
     match text {
         Some(t) => {
-            fs::create_dir_all(cli::store()).map_err(|e| e.to_string())?;
+            fs::create_dir_all(p.parent().unwrap_or(&p)).map_err(|e| e.to_string())?;
             fs::write(&p, t).map_err(|e| e.to_string())
         }
         None => match fs::remove_file(&p) {
@@ -90,7 +91,7 @@ fn apply(tx: &Value, key: &str, reverse: bool) -> Result<(), String> {
         list.reverse();
     }
     for c in list {
-        put(c["id"].as_str().unwrap_or(""), &c[key].as_str().map(str::to_string))?;
+        put(c["cal"].as_str().unwrap_or(""), c["id"].as_str().unwrap_or(""), &c[key].as_str().map(str::to_string))?;
     }
     Ok(())
 }
@@ -131,6 +132,7 @@ mod tests {
 
     #[test]
     fn a_step_is_undone_and_done_again_and_a_new_step_ends_the_redo_line() {
+        let _turn = cli::STORE_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let tmp = std::env::temp_dir().join(format!("fili-cal-undo-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         // SAFETY: only this test of the program sets these variables

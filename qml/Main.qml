@@ -27,7 +27,7 @@ ApplicationWindow {
     Agenda { id: cal }
     // What comes next (sidebar): a second object, its own range
     Agenda { id: soon }
-    DateTools { id: tools; prefs: JSON.parse(cal.settings()) }
+    DateTools { id: tools; prefs: JSON.parse(cal.settings()); accents: JSON.parse(Fili.themeJson()).accents; light: Fili.light }
 
     // ---- State ---------------------------------------------------------------------------------------------------
     // `--view day|week|month` overrides the view kept from the last launch
@@ -56,6 +56,22 @@ ApplicationWindow {
     readonly property bool footerShown: showFooter || cal.message !== "" || attending
     readonly property bool typing: quick.visible || editor.visible
     readonly property var events: JSON.parse(cal.events)
+    // The calendars [{slug, name, color, hidden}]
+    property var calendars: JSON.parse(cal.calendars())
+    function reloadCalendars() { calendars = JSON.parse(cal.calendars()); }
+    function setCalendar(slug, key, value) { if (cal.calendarSet(slug, key, value)) { reloadCalendars(); soon.refresh(); } }
+    function saveCalendar(slug, name, color) {
+        if (slug === "") {
+            const s = cal.calendarAdd(name, color);
+            if (s === "")
+                return;
+        } else {
+            cal.calendarSet(slug, "name", name);
+            cal.calendarSet(slug, "color", color);
+        }
+        reloadCalendars();
+        soon.refresh();
+    }
     readonly property var upcoming: JSON.parse(soon.events).filter(e => tools.end(e) >= win.now || e.allDay).slice(0, 12)
 
     // The range the view shows: [from, to)
@@ -138,6 +154,8 @@ ApplicationWindow {
             win.showHeader = Fili.header();
             win.showFooter = Fili.footer();
             win.attentionOn = Fili.attention();
+            tools.accents = JSON.parse(Fili.themeJson()).accents;
+            tools.light = Fili.light;
         }
     }
     // What makes Agenda ask for the user when the window is not the active one: an event that could not be saved
@@ -167,7 +185,7 @@ ApplicationWindow {
         }
     }
     Timer { interval: 60000; repeat: true; running: win.visible; onTriggered: cal.tick() }
-    Timer { interval: 3000; repeat: true; running: win.visible; onTriggered: { cal.refresh(); soon.refresh(); tools.prefs = JSON.parse(cal.settings()); } }
+    Timer { interval: 3000; repeat: true; running: win.visible; onTriggered: { cal.refresh(); soon.refresh(); tools.prefs = JSON.parse(cal.settings()); win.reloadCalendars(); } }
     Timer { interval: 6000; running: cal.message !== "" && !cal.failed; onTriggered: cal.clearMessage() }
 
     // ---- Commands: the menu of the fili-bar and the assistant (fili-cal ctl) -------------------------------------------
@@ -182,6 +200,7 @@ ApplicationWindow {
         "new-event": { on: () => !win.typing, run: () => win.newEvent() },
         "undo": { on: () => !win.typing && JSON.parse(cal.undoState()).undo, run: () => { cal.undo(); soon.refresh(); } },
         "redo": { on: () => !win.typing && JSON.parse(cal.undoState()).redo, run: () => { cal.redo(); soon.refresh(); } },
+        "new-calendar": { on: () => !win.typing, run: () => calendarDialog.create() },
         "quick-add": { on: () => !win.typing, run: () => quick.start() },
         "settings": { on: () => true, run: () => Fili.openSettings() },
         "toggle-header": { on: () => true, run: () => win.showHeader = !win.showHeader },
@@ -225,6 +244,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+W"; onActivated: win.quit() }
     Shortcut { sequence: "Ctrl+Q"; onActivated: win.quit() }
     Shortcut { sequence: "Ctrl+N"; enabled: !win.typing; onActivated: win.runAction("new-event") }
+    Shortcut { sequence: "Ctrl+Alt+N"; enabled: !win.typing; onActivated: win.runAction("new-calendar") }
     Shortcut { sequence: "Ctrl+Shift+N"; enabled: !win.typing; onActivated: win.runAction("quick-add") }
     Shortcut { sequence: "Ctrl+Z"; enabled: !win.typing; onActivated: win.runAction("undo") }
     Shortcut { sequence: "Ctrl+Shift+Z"; enabled: !win.typing; onActivated: win.runAction("redo") }
@@ -376,6 +396,65 @@ ApplicationWindow {
                 onPicked: d => win.anchor = d
             }
             FiliSidebarSection {
+                title: Fili.tr("Calendars")
+                Repeater {
+                    model: win.calendars
+                    Item {
+                        id: calRow
+                        required property var modelData
+                        width: parent ? parent.width : 0
+                        height: 28
+                        activeFocusOnTab: true
+                        Keys.onReturnPressed: calendarDialog.edit(calRow.modelData)
+                        Rectangle {
+                            anchors { fill: parent; leftMargin: FiliTheme.space2; rightMargin: FiliTheme.space2 }
+                            radius: FiliTheme.radiusControl
+                            color: calArea.containsMouse ? FiliTheme.surfaceHover : "transparent"
+                        }
+                        // The colour is a check box: shown, or hidden
+                        Rectangle {
+                            id: calBox
+                            x: FiliTheme.margin
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 14
+                            height: 14
+                            radius: 4
+                            color: calRow.modelData.hidden ? "transparent" : tools.colorOf(calRow.modelData)
+                            border.width: 2
+                            border.color: tools.colorOf(calRow.modelData)
+                            MouseArea { anchors.fill: parent; anchors.margins: -5; onClicked: win.setCalendar(calRow.modelData.slug, "hidden", calRow.modelData.hidden ? "false" : "true") }
+                            Accessible.role: Accessible.CheckBox
+                            Accessible.name: calRow.modelData.name
+                            Accessible.checked: !calRow.modelData.hidden
+                        }
+                        Text {
+                            anchors { left: calBox.right; leftMargin: FiliTheme.space2; right: parent.right; rightMargin: FiliTheme.space3; verticalCenter: parent.verticalCenter }
+                            text: calRow.modelData.name
+                            elide: Text.ElideRight
+                            font.family: FiliTheme.font
+                            font.pixelSize: FiliTheme.size
+                            color: calRow.modelData.hidden ? FiliTheme.muted : FiliTheme.text
+                        }
+                        MouseArea { id: calArea; anchors { fill: parent; leftMargin: calBox.x + calBox.width + 6 }
+                            hoverEnabled: true; onClicked: calendarDialog.edit(calRow.modelData) }
+                    }
+                }
+                Text {
+                    x: FiliTheme.margin
+                    text: Fili.tr("New calendar…")
+                    font.family: FiliTheme.font
+                    font.pixelSize: FiliTheme.sizeSmall
+                    color: FiliTheme.muted
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -4
+                        onClicked: calendarDialog.create()
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: Fili.tr("New calendar…")
+                }
+            }
+            FiliSidebarSection {
                 title: Fili.tr("Coming up")
                 Repeater {
                     model: win.upcoming
@@ -389,7 +468,7 @@ ApplicationWindow {
                             radius: FiliTheme.radiusControl
                             color: soonArea.containsMouse ? FiliTheme.surfaceHover : "transparent"
                         }
-                        Rectangle { x: FiliTheme.margin; y: 8; width: 3; height: 24; radius: 1.5; color: FiliTheme.accentColor }
+                        Rectangle { x: FiliTheme.margin; y: 8; width: 3; height: 24; radius: 1.5; color: tools.colorOf(soonRow.modelData) }
                         Column {
                             anchors { left: parent.left; leftMargin: FiliTheme.margin + 10; right: parent.right; rightMargin: FiliTheme.space3; verticalCenter: parent.verticalCenter }
                             Text { width: parent.width; text: soonRow.modelData.title; elide: Text.ElideRight; font.family: FiliTheme.font; font.pixelSize: FiliTheme.sizeList; color: FiliTheme.text }
@@ -551,9 +630,16 @@ ApplicationWindow {
             }
         }
 
+        CalendarDialog {
+            id: calendarDialog
+            tools: tools
+            onSaved: (slug, name, color) => win.saveCalendar(slug, name, color)
+            onDeleted: slug => { if (cal.calendarRemove(slug)) { win.reloadCalendars(); soon.refresh(); } }
+        }
         EventEditor {
             id: editor
             tools: tools
+            calendars: win.calendars
             onSaved: (id, json) => win.applySaved(id, json)
             onDeleted: (id, occ, all) => win.applyDeleted(id, occ, all)
         }

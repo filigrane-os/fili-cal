@@ -20,6 +20,7 @@ fn main() {
                 "qml/MonthView.qml",
                 "qml/TimeGrid.qml",
                 "qml/MiniMonth.qml",
+                "qml/CalendarDialog.qml",
                 "qml/EventEditor.qml",
             ])
             .depend("Fili.UI")

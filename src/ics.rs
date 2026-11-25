@@ -90,6 +90,8 @@ pub struct Event {
     pub rdate: Vec<NaiveDateTime>,
     /// Properties of the VEVENT this program does not use (ATTENDEE, CATEGORIES, X-…), written back unchanged
     pub extra: Vec<String>,
+    /// The calendar (folder of the store) that holds the file; not part of the iCalendar text, empty = the default one
+    pub calendar: String,
 }
 
 impl Default for Event {
@@ -108,6 +110,7 @@ impl Default for Event {
             skip: vec![],
             rdate: vec![],
             extra: vec![],
+            calendar: String::new(),
         }
     }
 }

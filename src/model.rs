@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use crate::{
     cli,
     ics::{self, Event, Freq, Rule},
-    undo, when, zone,
+    calendars, undo, when, zone,
 };
 
 const MINUTE: &str = "%Y-%m-%dT%H:%M";
@@ -22,7 +22,7 @@ fn parse_start(s: &str) -> Result<(NaiveDateTime, bool), String> {
     parse_day(s).map(|d| (d, true)).ok_or_else(|| format!("bad date: {s}"))
 }
 
-fn one(id: &str, e: &Event, occ: NaiveDateTime) -> Value {
+fn one(id: &str, e: &Event, occ: NaiveDateTime, color: &str) -> Value {
     let end = e.end_of(occ);
     // `start`, `end`, `occ` and `first` are what the views show (system zone); `zstart` and `zend` are the same time in the
     // zone of the event (`tz`, empty = floating), which the editor shows
@@ -30,7 +30,8 @@ fn one(id: &str, e: &Event, occ: NaiveDateTime) -> Value {
     json!({
         "id": id, "title": e.summary, "start": occ.format(MINUTE).to_string(),
         "end": end.map(|x| x.format(MINUTE).to_string()), "allDay": e.all_day, "place": e.place, "note": e.note,
-        "tz": e.tzid.clone().unwrap_or_default(), "zstart": zone_of(occ), "zend": end.map(zone_of),
+        "tz": e.tzid.clone().unwrap_or_default(),
+        "calendar": if e.calendar.is_empty() { calendars::DEFAULT } else { &e.calendar }, "color": color, "zstart": zone_of(occ), "zend": end.map(zone_of),
         "alarms": e.alarms, "every": e.rule.as_ref().map_or("", |r| freq_word(r.freq)),
         "interval": e.rule.as_ref().map_or(1, |r| r.interval), "count": e.rule.as_ref().and_then(|r| r.count),
         "until": e.rule.as_ref().and_then(|r| r.until).map(|u| u.format(MINUTE).to_string()),
@@ -57,9 +58,16 @@ pub fn events_json(from: &str, to: &str) -> String {
 pub fn events_json_of(all: &[(String, Event)], from: &str, to: &str) -> String {
     let (Some(from), Some(to)) = (parse_day(from), parse_day(to)) else { return "[]".into() };
     let mut rows: Vec<(NaiveDateTime, String, Value)> = Vec::new();
+    // calendars that are hidden show nothing in the views (their alerts still ring)
+    let cals = calendars::list();
     for (id, e) in all {
+        let slug = if e.calendar.is_empty() { calendars::DEFAULT } else { &e.calendar };
+        let Some(cal) = cals.iter().find(|c| c.slug == slug) else { continue };
+        if cal.hidden {
+            continue;
+        }
         for occ in ics::occurrences(e, from, to) {
-            rows.push((occ, e.summary.clone(), one(id, e, occ)));
+            rows.push((occ, e.summary.clone(), one(id, e, occ, &cal.color)));
         }
     }
     rows.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
@@ -74,6 +82,9 @@ fn apply(e: &mut Event, v: &Value) -> Result<(), String> {
             return Err("the title is empty".into());
         }
         e.summary = t.trim().to_string();
+    }
+    if let Some(c) = text("calendar") {
+        e.calendar = calendars::find(c).ok_or_else(|| format!("no calendar named {c}"))?.slug;
     }
     if let Some(p) = text("place") {
         e.place = p.to_string();

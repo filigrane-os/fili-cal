@@ -73,6 +73,11 @@
       "keys": "Ctrl+Shift+Z"
     },
     {
+      "name": "new-calendar",
+      "label": "New Calendar…",
+      "keys": "Ctrl+Alt+N"
+    },
+    {
       "name": "quick-add",
       "label": "Quick Add…",
       "keys": "Ctrl+Shift+N"

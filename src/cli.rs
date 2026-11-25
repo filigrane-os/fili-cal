@@ -31,8 +31,12 @@ use std::{
 
 use chrono::{Duration, NaiveDateTime, Timelike};
 use crate::ics::{self, Event, Freq, Rule};
-use crate::{undo, when};
+use crate::{calendars, undo, when};
 use serde_json::json;
+
+/// The tests that point the store at a folder of their own take turns
+#[cfg(test)]
+pub static STORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub fn home() -> String {
     env::var("HOME").unwrap_or_default()
@@ -58,11 +62,32 @@ pub fn new_id() -> String {
     short_hash(&format!("{nanos}{}", std::process::id()))
 }
 
-pub fn path_of(id: &str) -> Result<PathBuf, String> {
+fn valid_id(id: &str) -> Result<(), String> {
     if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric()) {
         return Err(format!("not an event id: {id}"));
     }
-    Ok(store().join(format!("{id}.ics")))
+    Ok(())
+}
+
+/// The file of an event in a given calendar
+pub fn path_in(calendar: &str, id: &str) -> Result<PathBuf, String> {
+    valid_id(id)?;
+    let cal = if calendar.is_empty() { calendars::DEFAULT } else { calendar };
+    if !cal.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err(format!("not a calendar: {calendar}"));
+    }
+    Ok(calendars::dir_of(cal).join(format!("{id}.ics")))
+}
+
+/// The file of an event wherever it is (an id is unique across the calendars); a new event is in the default calendar
+pub fn path_of(id: &str) -> Result<PathBuf, String> {
+    valid_id(id)?;
+    calendars::list().iter().map(|c| calendars::dir_of(&c.slug).join(format!("{id}.ics"))).find(|p| p.exists()).map_or_else(|| path_in(calendars::DEFAULT, id), Ok)
+}
+
+/// The calendar a file belongs to (its folder)
+fn calendar_of(p: &std::path::Path) -> String {
+    p.parent().and_then(|d| d.file_name()).and_then(|n| n.to_str()).unwrap_or(calendars::DEFAULT).to_string()
 }
 
 /// What the files of the store gave: the events, and the files that could not be read (name, why)
@@ -83,28 +108,30 @@ fn cache() -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, Cache
 /// Reads the store. A file that cannot be read, or that holds no event, is reported instead of disappearing.
 pub fn scan() -> Scan {
     let mut out = Scan { events: Vec::new(), unreadable: Vec::new() };
-    let Ok(rd) = fs::read_dir(store()) else { return out };
     let mut cache = cache().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut seen = std::collections::HashSet::new();
-    for f in rd.flatten() {
-        let p = f.path();
-        if p.extension().is_none_or(|e| e != "ics") {
-            continue;
+    for cal in calendars::list() {
+        let Ok(rd) = fs::read_dir(calendars::dir_of(&cal.slug)) else { continue };
+        for f in rd.flatten() {
+            let p = f.path();
+            if p.extension().is_none_or(|e| e != "ics") {
+                continue;
+            }
+            let Some(id) = p.file_stem().and_then(|s| s.to_str()).map(str::to_string) else { continue };
+            let meta = fs::metadata(&p).ok();
+            let stamp = (meta.as_ref().and_then(|m| m.modified().ok()).unwrap_or(std::time::UNIX_EPOCH), meta.as_ref().map_or(0, std::fs::Metadata::len));
+            seen.insert(p.clone());
+            let hit = cache.get(&p).filter(|c| (c.0, c.1) == stamp).cloned();
+            let entry = hit.unwrap_or_else(|| {
+                let parsed = fs::read_to_string(&p).ok().and_then(|text| ics::parse_ics(&text).into_iter().next()).map(|e| Event { calendar: cal.slug.clone(), ..e });
+                (stamp.0, stamp.1, parsed)
+            });
+            match &entry.2 {
+                Some(e) => out.events.push((id, e.clone())),
+                None => out.unreadable.push((id, crate::i18n::tr("no event in it").to_string())),
+            }
+            cache.insert(p, entry);
         }
-        let Some(id) = p.file_stem().and_then(|s| s.to_str()).map(str::to_string) else { continue };
-        let meta = fs::metadata(&p).ok();
-        let stamp = (meta.as_ref().and_then(|m| m.modified().ok()).unwrap_or(std::time::UNIX_EPOCH), meta.as_ref().map_or(0, std::fs::Metadata::len));
-        seen.insert(p.clone());
-        let hit = cache.get(&p).filter(|c| (c.0, c.1) == stamp).cloned();
-        let entry = hit.unwrap_or_else(|| {
-            let parsed = fs::read_to_string(&p).ok().and_then(|text| ics::parse_ics(&text).into_iter().next());
-            (stamp.0, stamp.1, parsed)
-        });
-        match &entry.2 {
-            Some(e) => out.events.push((id, e.clone())),
-            None => out.unreadable.push((id, crate::i18n::tr("no event in it").to_string())),
-        }
-        cache.insert(p, entry);
     }
     cache.retain(|k, _| seen.contains(k));
     out.events.sort_by_key(|(id, e)| (e.display_start(), id.clone()));
@@ -118,19 +145,30 @@ pub fn load_all() -> Vec<(String, Event)> {
 }
 
 pub fn load(id: &str) -> Result<Event, String> {
-    let text = fs::read_to_string(path_of(id)?).map_err(|_| format!("no such event: {id}"))?;
-    ics::parse_ics(&text).into_iter().next().ok_or_else(|| format!("unreadable event: {id}"))
+    let p = path_of(id)?;
+    let text = fs::read_to_string(&p).map_err(|_| format!("no such event: {id}"))?;
+    ics::parse_ics(&text).into_iter().next().map(|e| Event { calendar: calendar_of(&p), ..e }).ok_or_else(|| format!("unreadable event: {id}"))
 }
 
+/// Writes an event in its calendar (a changed calendar moves the file)
 pub fn save(id: &str, e: &Event) -> Result<(), String> {
-    fs::create_dir_all(store()).map_err(|x| x.to_string())?;
-    let p = path_of(id)?;
+    let p = path_in(&e.calendar, id)?;
+    fs::create_dir_all(p.parent().ok_or("no folder")?).map_err(|x| x.to_string())?;
     let before = fs::read_to_string(&p).ok();
     let tmp = p.with_extension("ics.new");
     let text = ics::to_ics(e);
     fs::write(&tmp, &text).map_err(|x| x.to_string())?;
     fs::rename(&tmp, &p).map_err(|x| x.to_string())?;
-    undo::record(id, before, Some(text));
+    undo::record(&calendar_of(&p), id, before, Some(text));
+    // the same id in another calendar: the event moved
+    for c in calendars::list() {
+        let q = calendars::dir_of(&c.slug).join(format!("{id}.ics"));
+        if q != p && q.exists() {
+            let old = fs::read_to_string(&q).ok();
+            fs::remove_file(&q).map_err(|x| x.to_string())?;
+            undo::record(&c.slug, id, old, None);
+        }
+    }
     Ok(())
 }
 
@@ -139,7 +177,7 @@ pub fn delete(id: &str) -> Result<(), String> {
     let p = path_of(id)?;
     let before = fs::read_to_string(&p).ok();
     fs::remove_file(&p).map_err(|x| x.to_string())?;
-    undo::record(id, before, None);
+    undo::record(&calendar_of(&p), id, before, None);
     Ok(())
 }
 
@@ -160,7 +198,7 @@ fn parse_opts(args: &[String]) -> Result<Opts, String> {
         match a.strip_prefix("--") {
             Some(name @ ("reminder" | "tsv" | "json")) => o.flags.push(name.to_string()),
             Some("alarm") => o.alarms.push(it.next().ok_or("--alarm needs a duration")?.clone()),
-            Some(name @ ("at" | "end" | "for" | "place" | "note" | "every" | "interval" | "count" | "until" | "title" | "on" | "from" | "to" | "days")) => {
+            Some(name @ ("at" | "end" | "for" | "place" | "note" | "every" | "interval" | "count" | "until" | "title" | "on" | "from" | "to" | "days" | "calendar")) => {
                 o.one.insert(name.to_string(), it.next().ok_or(format!("--{name} needs a value"))?.clone());
             }
             Some(other) => return Err(format!("unknown option: --{other}")),
@@ -174,6 +212,9 @@ fn parse_opts(args: &[String]) -> Result<Opts, String> {
 fn apply(e: &mut Event, o: &Opts, now: NaiveDateTime, adding: bool) -> Result<(), String> {
     if let Some(t) = o.one.get("title") {
         e.summary.clone_from(t);
+    }
+    if let Some(c) = o.one.get("calendar") {
+        e.calendar = calendars::find(c).ok_or_else(|| format!("no calendar named {c} (fili-cal calendar list)"))?.slug;
     }
     if let Some(p) = o.one.get("place") {
         e.place.clone_from(p);
@@ -262,7 +303,7 @@ fn print_occ(v: &[Occ], mode: &str) {
                 let end = o.ev.end_of(o.start);
                 json!({"v": 1, "id": o.id, "title": o.ev.summary, "start": o.start.format("%Y-%m-%dT%H:%M:%S").to_string(),
                     "end": end.map(|e| e.format("%Y-%m-%dT%H:%M:%S").to_string()), "all_day": o.ev.all_day, "place": o.ev.place,
-                    "note": o.ev.note, "alarms": o.ev.alarms, "every": o.ev.rule.as_ref().map(|r| r.freq.name()), "tz": o.ev.tzid})
+                    "note": o.ev.note, "alarms": o.ev.alarms, "every": o.ev.rule.as_ref().map(|r| r.freq.name()), "tz": o.ev.tzid, "calendar": if o.ev.calendar.is_empty() { calendars::DEFAULT } else { &o.ev.calendar }})
             })
             .collect();
         println!("{}", json!(rows));
@@ -442,7 +483,11 @@ fn run_command(args: &[String]) -> Result<(), String> {
             print!("{}", ics::to_ics(&e).replace("\r\n", "\n"));
         }
         "list" | "next" => {
-            let all = load_all();
+            let mut all = load_all();
+            if let Some(c) = o.one.get("calendar") {
+                let slug = calendars::find(c).ok_or_else(|| format!("no calendar named {c}"))?.slug;
+                all.retain(|(_, e)| (if e.calendar.is_empty() { calendars::DEFAULT } else { &e.calendar }) == slug);
+            }
             let mode = if o.flags.iter().any(|f| f == "json") { "json" } else if o.flags.iter().any(|f| f == "tsv") { "tsv" } else { "text" };
             let today = now.date().and_hms_opt(0, 0, 0).unwrap_or(now);
             if cmd == "next" {
@@ -460,6 +505,7 @@ fn run_command(args: &[String]) -> Result<(), String> {
             }
         }
         "tick" => tick()?,
+        "calendar" => calendar_command(&o.words)?,
         "import" => {
             let file = o.words.first().ok_or("import needs a file")?;
             let text = fs::read_to_string(file).map_err(|x| format!("{file}: {x}"))?;
@@ -490,6 +536,30 @@ fn run_command(args: &[String]) -> Result<(), String> {
             println!("fili-cal add|edit|rm|show|list|next|tick|import|export|undo|redo (see the header of apps/fili-cal/src/main.rs)");
         }
         other => return Err(format!("unknown command: {other} (add, quick, edit, rm, show, list, next, tick, import, export)")),
+    }
+    Ok(())
+}
+
+/// `fili-cal calendar list|add NAME [COLOR]|rename NAME NEW|color NAME TONE|hide NAME|show NAME|rm NAME`
+fn calendar_command(w: &[String]) -> Result<(), String> {
+    let need = |i: usize, what: &str| w.get(i).cloned().ok_or(format!("calendar: {what} is missing"));
+    let slug = |i: usize| -> Result<String, String> {
+        let name = need(i, "the calendar")?;
+        Ok(calendars::find(&name).ok_or_else(|| format!("no calendar named {name}"))?.slug)
+    };
+    match w.first().map(String::as_str).unwrap_or("list") {
+        "list" => {
+            for c in calendars::list() {
+                println!("{}\t{}\t{}{}", c.slug, c.name, c.color, if c.hidden { "\thidden" } else { "" });
+            }
+        }
+        "add" => println!("{}", calendars::create(&need(1, "the name")?, w.get(2).map_or("", String::as_str))?.slug),
+        "rename" => calendars::update(&slug(1)?, "name", &need(2, "the new name")?)?,
+        "color" => calendars::update(&slug(1)?, "color", &need(2, "the tone")?)?,
+        "hide" => calendars::update(&slug(1)?, "hidden", "true")?,
+        "show" => calendars::update(&slug(1)?, "hidden", "false")?,
+        "rm" => calendars::remove(&slug(1)?)?,
+        other => return Err(format!("calendar: unknown command {other} (list, add, rename, color, hide, show, rm)")),
     }
     Ok(())
 }

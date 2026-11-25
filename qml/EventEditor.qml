@@ -13,6 +13,9 @@ FiliDialog {
     // Start of the first occurrence of a series (the series moves by as many days as the date of this occurrence)
     property string first: ""
     property bool series: false
+    // The calendars [{slug, name, color, hidden}] and the one the event is in
+    property var calendars: []
+    property string calendar: "personal"
     // The occurrence and the first start as wall times of the zone of the event (the editor works in that zone)
     property string occZ: ""
     // The rule has parts the editor cannot show (BYDAY, BYSETPOS…): it is kept as it is and shown as text
@@ -51,6 +54,7 @@ FiliDialog {
     function edit(ev) {
         eventId = ev.id;
         occ = ev.occ;
+        calendar = ev.calendar;
         first = ev.zfirst;
         occZ = ev.zstart;
         series = ev.series;
@@ -81,6 +85,7 @@ FiliDialog {
         first = "";
         series = false;
         occZ = "";
+        calendar = (calendars.find(c => !c.hidden) || { slug: "personal" }).slug;
         custom = false;
         rrule = "";
         alertsRest = [];
@@ -116,7 +121,7 @@ FiliDialog {
             title: titleField.text.trim(), allDay: allDay,
             start: allDay ? day : day + "T" + startField.text,
             end: allDay ? (span > 0 ? tools.iso(tools.addDays(tools.parse(day), span + 1)) : "") : (endField.text === "" ? "" : day + "T" + endField.text),
-            tz: zoneField.text.trim(),
+            tz: zoneField.text.trim(), calendar: calendar,
             place: placeField.text, note: noteField.text, every: every, alarms: alert < 0 ? [] : [alert].concat(alertsRest)
         };
         saved(eventId, JSON.stringify(o));
@@ -164,6 +169,11 @@ FiliDialog {
         visible: !ed.allDay
         label: Fili.tr("Time zone")
         FiliTextField { id: zoneField; width: 200; placeholder: Fili.tr("Same hour everywhere"); error: !ed.zoneOk; onAccepted: ed.accept() }
+    }
+    Row2 {
+        visible: ed.calendars.length > 1
+        label: Fili.tr("Calendar")
+        FiliSelect { width: 200; model: ed.calendars.map(c => ({ label: c.name, value: c.slug })); current: ed.calendar; onPicked: v => ed.calendar = v }
     }
     Row2 {
         label: Fili.tr("Repeat")

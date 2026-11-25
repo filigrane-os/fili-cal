@@ -1,8 +1,19 @@
 // Date helpers shared by the views (one instance in Main.qml, handed to the others as `tools`). Dates are local; the events
 // of the store carry "YYYY-MM-DDTHH:MM" (a timed event) or "YYYY-MM-DD" (a whole day).
 import QtQuick
+import Fili.UI
 
 QtObject {
+    // Accent tones of the theme by name ([dark, dark bright, light, light bright]), and whether the theme is light: the colour of
+    // a calendar is the name of one of them
+    property var accents: ({})
+    property bool light: false
+    function colorOf(ev) {
+        const a = ev && ev.color ? accents[ev.color] : undefined;
+        return a ? (light ? a[2] : a[0]) : FiliTheme.accentColor;
+    }
+    // Text on a colour: dark on a light one, white on a dark one
+    function inkOn(c) { return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b > 0.55 ? "#14181f" : "#ffffff"; }
     // The settings of fili-cal.toml (Main.qml sets them): clock12, firstHour, defaultLength (minutes), defaultAlert (seconds)
     property var prefs: ({ firstDay: -1, clock12: false, firstHour: 7, defaultLength: 60, defaultAlert: 600 })
     // "14:30" or "2:30 PM", as the settings say

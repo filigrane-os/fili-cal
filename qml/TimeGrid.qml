@@ -85,14 +85,14 @@ Item {
                             width: parent.width
                             height: 18
                             radius: 4
-                            color: FiliTheme.accentColor
+                            color: v.tools.colorOf(wc.modelData)
                             Text {
                                 anchors { left: parent.left; leftMargin: 5; right: parent.right; rightMargin: 4; verticalCenter: parent.verticalCenter }
                                 text: wc.modelData.title
                                 elide: Text.ElideRight
                                 font.family: FiliTheme.font
                                 font.pixelSize: FiliTheme.sizeSmall
-                                color: 0.299 * FiliTheme.accentColor.r + 0.587 * FiliTheme.accentColor.g + 0.114 * FiliTheme.accentColor.b > 0.55 ? "#14181f" : "#ffffff"
+                                color: v.tools.inkOn(wc.color)
                             }
                             MouseArea { anchors.fill: parent; onClicked: v.eventClicked(wc.modelData) }
                         }
@@ -196,9 +196,9 @@ Item {
                         y: modelData.s / 60 * v.hourH + 1
                         height: reminder ? 20 : Math.max(20, (modelData.e - modelData.s) / 60 * v.hourH - 2)
                         radius: 5
-                        color: FiliTheme.alpha(FiliTheme.accentColor, blkArea.containsMouse ? 0.3 : 0.18)
+                        color: FiliTheme.alpha(v.tools.colorOf(modelData.ev), blkArea.containsMouse ? 0.3 : 0.18)
                         clip: true
-                        Rectangle { width: 3; height: parent.height - 4; y: 2; x: 2; radius: 1.5; color: FiliTheme.accentColor }
+                        Rectangle { width: 3; height: parent.height - 4; y: 2; x: 2; radius: 1.5; color: v.tools.colorOf(blk.modelData.ev) }
                         Column {
                             anchors { left: parent.left; leftMargin: 9; right: parent.right; rightMargin: 4; top: parent.top; topMargin: 3 }
                             Text {

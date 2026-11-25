@@ -54,6 +54,9 @@ Done when: the fixtures round-trip, and `fili-cal list` over a Google export mat
 
 ## P2. Calendars and colours
 
+**Status (2026-11-25): done** (folders, migration into Personal, sidebar with check boxes, dialog, editor choice, CLI, colours by theme tone;
+rename and colour change are not in the journal, deleting a calendar goes to the trash).
+
 1. **Several calendars**: a folder per calendar under `~/.local/share/filigrane/calendar/<name>/` (the current flat folder is
    migrated into "Personal" at the first start), each with a name and a colour (the accent tones of the theme; one more
    colour never replaces the accent of the interface for UI elements, only event marks).
