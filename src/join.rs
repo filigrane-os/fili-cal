@@ -9,18 +9,30 @@ pub struct Join {
     pub service: &'static str,
 }
 
-/// The service of a link, from its host (None: not a meeting link)
+/// The service of a link, from its host and, for the services whose invitations hold other links too (the options of the meeting,
+/// the help pages), from its path (None: not a meeting link)
 fn service_of(url: &str) -> Option<&'static str> {
     let rest = url.split_once("://")?.1;
     let host = rest.split(['/', '?', '#']).next()?.split(':').next()?.to_lowercase();
+    let path = rest[rest.find('/').unwrap_or(rest.len())..].to_lowercase();
+    let has = |parts: &[&str]| parts.iter().any(|p| path.contains(p));
     let is = |d: &str| host == d || host.ends_with(&format!(".{d}"));
     Some(if is("teams.microsoft.com") || is("teams.live.com") || is("teams.microsoft.us") {
+        if !has(&["/l/meetup-join/", "/meet/"]) {
+            return None;
+        }
         "Teams"
     } else if is("meet.google.com") {
         "Meet"
     } else if is("zoom.us") || is("zoomgov.com") || is("zoom.com") {
+        if !has(&["/j/", "/my/", "/wc/join/", "/s/"]) {
+            return None;
+        }
         "Zoom"
     } else if is("webex.com") {
+        if !has(&["/meet/", "/join", "/j.php", "mtid="]) {
+            return None;
+        }
         "Webex"
     } else if is("whereby.com") {
         "Whereby"
@@ -41,6 +53,20 @@ fn service_of(url: &str) -> Option<&'static str> {
     })
 }
 
+/// Every meeting link in a text, in order, each once
+pub fn find_all(text: &str) -> Vec<Join> {
+    let mut out: Vec<Join> = Vec::new();
+    for w in text.split(|c: char| c.is_whitespace() || "<>\"'()[],;".contains(c)).filter(|w| w.starts_with("https://") || w.starts_with("http://")) {
+        let url = w.trim_end_matches(['.', ':', '!', '?']);
+        if let Some(service) = service_of(url)
+            && !out.iter().any(|j| j.url == url)
+        {
+            out.push(Join { url: url.to_string(), service });
+        }
+    }
+    out
+}
+
 /// The first meeting link in a text: words that start with http(s)://, with what surrounds a link in a mail taken off
 pub fn find(text: &str) -> Option<Join> {
     text.split(|c: char| c.is_whitespace() || "<>\"'()[],;".contains(c)).filter(|w| w.starts_with("https://") || w.starts_with("http://")).find_map(|w| {
@@ -50,6 +76,19 @@ pub fn find(text: &str) -> Option<Join> {
 }
 
 impl Event {
+    /// Every meeting link of the event (the place, the notes, the properties), each once, the first being `join()`
+    pub fn joins(&self) -> Vec<Join> {
+        let mut out = find_all(&self.place);
+        let rest = std::iter::once(self.note.clone()).chain(self.extra.iter().filter(|l| ["URL", "X-GOOGLE-CONFERENCE", "X-MICROSOFT-SKYPETEAMSMEETINGURL", "CONFERENCE"].iter().any(|p| l.to_uppercase().starts_with(p))).filter_map(|l| l.split_once(':').map(|(_, v)| v.to_string())));
+        for text in rest {
+            for j in find_all(&text) {
+                if !out.iter().any(|o| o.url == j.url) {
+                    out.push(j);
+                }
+            }
+        }
+        out
+    }
     /// The link to join the meeting of this event: in the place, then in the notes, then in the properties some programs add
     /// (`URL`, `X-GOOGLE-CONFERENCE`, `X-MICROSOFT-SKYPETEAMSMEETINGURL`)
     pub fn join(&self) -> Option<Join> {
@@ -82,6 +121,18 @@ mod tests {
         assert_eq!(find("Agenda: https://docs.example.org/plan"), None);
         assert_eq!(find("https://notzoom.us.example.org/j/1"), None);
         assert_eq!(find("Room 4, second floor"), None);
+    }
+
+    #[test]
+    fn an_invitation_with_the_options_page_gives_only_the_meeting_and_a_note_can_hold_several_links() {
+        let note = "Join: <https://teams.microsoft.com/l/meetup-join/19%3ameeting_x/0> Meeting options: https://teams.microsoft.com/meetingOptions/?organizerId=1 Help: https://support.zoom.us/hc/en-us Backup https://meet.google.com/aaa-bbbb-ccc";
+        let e = Event { note: note.into(), ..Event::default() };
+        let all = e.joins();
+        assert_eq!(all.iter().map(|j| j.service).collect::<Vec<_>>(), ["Teams", "Meet"]);
+        assert_eq!(e.join().map(|j| j.service), Some("Teams"));
+        // the same link twice is one button
+        let twice = Event { place: "https://meet.google.com/aaa-bbbb-ccc".into(), note: "https://meet.google.com/aaa-bbbb-ccc".into(), ..Event::default() };
+        assert_eq!(twice.joins().len(), 1);
     }
 
     #[test]

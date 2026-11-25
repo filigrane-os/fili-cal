@@ -21,6 +21,8 @@ FiliDialog {
     // The meeting link of the event (found in the place or the notes), and its service
     property string join: ""
     property string joinService: ""
+    // Every meeting link of the event: [{url, service}] (a button each on the card)
+    property var joins: []
     signal joinRequested(string url)
     // The calendars [{slug, name, color, hidden}] and the one the event is in
     property var calendars: []
@@ -90,6 +92,7 @@ FiliDialog {
         done = ev.done === true;
         join = ev.join || "";
         joinService = ev.joinService || "";
+        joins = ev.joins || [];
         first = ev.zfirst;
         occZ = ev.zstart;
         series = ev.series;
@@ -126,6 +129,7 @@ FiliDialog {
         done = false;
         join = "";
         joinService = "";
+        joins = [];
         calendar = (calendars.find(c => !c.hidden && !c.subscribed) || { slug: "personal" }).slug;
         custom = false;
         rrule = "";
@@ -228,7 +232,31 @@ FiliDialog {
     readonly property string repeatLine: custom ? Fili.tr("Custom rule") : (repeats.find(r => r.value === every && every !== "") || { label: "" }).label
     readonly property string alertLine: alertList.map(v => alertLabel(v)).join(", ")
     // The notes without the meeting link (it is the button above)
-    readonly property string notesShown: (join !== "" ? noteField.text.split("<" + join + ">").join("").split(join).join("") : noteField.text).trim()
+    readonly property string notesShown: {
+        // the meeting links are the buttons above: a line that only said "Join:" before its link goes with it
+        const lines = noteField.text.split("\n").map(l => {
+            let t = l;
+            for (const j of joins)
+                t = t.split("<" + j.url + ">").join("").split(j.url).join("");
+            return t !== l && (t.trim() === "" || /^[^:]{0,24}:\s*$/.test(t.trim())) ? null : t;
+        });
+        return lines.filter(l => l !== null).join("\n").trim();
+    }
+    // A text as the card shows it: the links can be clicked, the rest is text (a link is shortened on screen, not in what it opens)
+    function linked(text) {
+        const esc = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r?\n/g, "<br>");
+        const re = /https?:\/\/[^\s<>"']+/g;
+        let out = "", last = 0, m;
+        while ((m = re.exec(text)) !== null) {
+            const url = m[0].replace(/[.,;:!?)\]]+$/, "");
+            out += esc(text.slice(last, m.index)) + '<a href="' + url.replace(/&/g, "&amp;").replace(/"/g, "&quot;") + '">' + esc(url.length > 64 ? url.slice(0, 61) + "…" : url) + "</a>";
+            last = m.index + url.length;
+            re.lastIndex = last;
+        }
+        return out + esc(text.slice(last));
+    }
+    // Only web links are opened from the text of an event
+    function openLink(link) { if (/^https?:\/\//.test(link)) Fili.openPath(link); }
     readonly property string calendarName: (calendars.find(c => c.slug === calendar) || { name: "" }).name
     Column {
         visible: ed.viewing
@@ -261,15 +289,28 @@ FiliDialog {
             font.pixelSize: FiliTheme.sizeSmall
             color: FiliTheme.muted
         }
-        JoinButton { tools: ed.tools; url: ed.join; service: ed.joinService; labelled: true; onClicked: ed.joinRequested(ed.join) }
+        // A button for each video meeting of the event (the links are taken out of the notes)
+        Flow {
+            visible: ed.joins.length > 0
+            width: parent.width
+            spacing: FiliTheme.space2
+            Repeater {
+                model: ed.joins
+                JoinButton { required property var modelData; tools: ed.tools; url: modelData.url; service: modelData.service; labelled: true; onClicked: ed.joinRequested(modelData.url) }
+            }
+        }
         Text {
-            visible: placeField.text !== "" && placeField.text !== ed.join
+            visible: placeField.text !== "" && !ed.joins.some(j => j.url === placeField.text.trim())
             width: parent.width
             wrapMode: Text.WordWrap
-            text: "📍 " + placeField.text
+            textFormat: Text.StyledText
+            linkColor: FiliTheme.accentColor
+            text: "📍 " + ed.linked(placeField.text)
+            onLinkActivated: link => ed.openLink(link)
             font.family: FiliTheme.font
             font.pixelSize: FiliTheme.size
             color: FiliTheme.text
+            HoverHandler { cursorShape: parent.hoveredLink !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
         // The notes can be long (the text of a Teams invitation): a window of their own
         Flickable {
@@ -283,10 +324,14 @@ FiliDialog {
                 id: noteText
                 width: parent.width
                 wrapMode: Text.Wrap
-                text: ed.notesShown
+                textFormat: Text.StyledText
+                linkColor: FiliTheme.accentColor
+                text: ed.linked(ed.notesShown)
+                onLinkActivated: link => ed.openLink(link)
                 font.family: FiliTheme.font
                 font.pixelSize: FiliTheme.size
                 color: FiliTheme.textSecondary
+                HoverHandler { cursorShape: parent.hoveredLink !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor }
             }
         }
         Row {
@@ -412,7 +457,7 @@ FiliDialog {
     Row2 {
         visible: !ed.viewing
         label: Fili.tr("Notes")
-        FiliTextField { id: noteField; width: ed.cardWidth - 2 * FiliTheme.space5 - 84 - FiliTheme.space3; placeholder: Fili.tr("Notes"); onAccepted: ed.accept() }
+        NotesField { id: noteField; width: ed.cardWidth - 2 * FiliTheme.space5 - 84 - FiliTheme.space3; height: 110; placeholder: Fili.tr("Notes") }
     }
     // Attached files: drop one on this card; a click opens it with the application of the user
     Column {

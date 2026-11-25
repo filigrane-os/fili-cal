@@ -18,6 +18,7 @@ fn main() {
                 "qml/Main.qml",
                 "qml/DateTools.qml",
                 "qml/MonthView.qml",
+                "qml/NotesField.qml",
                 "qml/AgendaList.qml",
                 "qml/SearchDialog.qml",
                 "qml/TimeGrid.qml",
