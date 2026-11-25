@@ -674,7 +674,16 @@ fn run_command(args: &[String]) -> Result<(), String> {
                     let j = e.join().ok_or_else(|| i18n::tr("this event has no meeting link").to_string())?;
                     (e.summary, j)
                 }
-                None => meeting_now(&load_all(), now).map(|(_, t, j, _)| (t, j)).ok_or_else(|| i18n::tr("no meeting with a link right now").to_string())?,
+                None => match meeting_now(&load_all(), now) {
+                    Some((_, t, j, _)) => (t, j),
+                    None => {
+                        // started from a key: nobody reads the terminal, so say it in a notification
+                        if !o.flags.iter().any(|f| f == "print") && std::io::IsTerminal::is_terminal(&std::io::stderr()) == false {
+                            notify("Agenda", i18n::tr("no meeting with a link right now"));
+                        }
+                        return Err(i18n::tr("no meeting with a link right now").to_string());
+                    }
+                },
             };
             if o.flags.iter().any(|f| f == "print") {
                 println!("{}", j.url);

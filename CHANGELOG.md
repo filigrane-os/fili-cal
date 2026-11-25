@@ -18,6 +18,10 @@ Agenda becomes a calendar you can live in.
   attached files.
 - Alerts: Snooze 10 min, Snooze 1 hour, Open; the alerts missed during a suspend as one notice; whole-day alert hour and travel time
   as settings; `fili-event emit calendar.alert`.
+- Video meetings: the link of Teams, Meet, Zoom, Webex… found in the place, notes or properties gives a Join button (week, month, list, editor,
+  sidebar, right-click menu, Ctrl+J), a Join button in the alert (a click on the bubble joins) and `fili-cal join`.
+- Invitations: Accept, Maybe, Decline in the import dialog, answered by Facteur; the clock card of the bar marks the days with events,
+  lists the day selected and joins meetings (`fili-cal --goto DAY`).
 - Settings in `fili-cal.toml` (first day, 12 or 24 hours, default length and alert, first hour, work week, week numbers, travel time).
 - For Lia and scripts: the window publishes its context, `goto`, `select` and `search` actions, `fili-cal free`.
 - `make test-window` drives the window offscreen.

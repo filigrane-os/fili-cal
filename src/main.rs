@@ -38,7 +38,7 @@ fn main() {
         }
         Some("-h" | "--help") => {
             println!(
-                "fili-cal {}: Agenda, the calendar and the reminders of Filigrane\n\nUsage: fili-cal [--no-header] [--no-footer]   open the window\n       fili-cal add|quick|edit|rm|show|list|next|tick|calendar|import|export ...   (fili-cal help)\n       fili-cal ctl [--pid PID] action NAME [ARG] | state | actions",
+                "fili-cal {}: Agenda, the calendar and the reminders of Filigrane\n\nUsage: fili-cal [--no-header] [--no-footer] [--goto DAY] [FILE|webcal:LINK]   open the window\n       fili-cal add|quick|edit|rm|show|list|next|tick|calendar|import|export ...   (fili-cal help)\n       fili-cal ctl [--pid PID] action NAME [ARG] | state | actions",
                 env!("CARGO_PKG_VERSION")
             );
             return;
@@ -67,7 +67,7 @@ fn main() {
     // A file or a link to open (what the system gives a handler of text/calendar and webcal:): the open window shows its import
     // preview, or the new one does
     // (the value of --shot or --view is not a file to open)
-    if let Some(src) = args.iter().enumerate().skip(1).filter(|(i, _)| !matches!(args[i - 1].as_str(), "--shot" | "--view")).map(|(_, a)| a).find(|a| !a.starts_with("--") && (a.starts_with("webcal:") || a.starts_with("webcals:") || a.starts_with("file:") || a.starts_with("http") || std::path::Path::new(a).is_file())) {
+    if let Some(src) = args.iter().enumerate().skip(1).filter(|(i, _)| !matches!(args[i - 1].as_str(), "--shot" | "--view" | "--goto")).map(|(_, a)| a).find(|a| !a.starts_with("--") && (a.starts_with("webcal:") || a.starts_with("webcals:") || a.starts_with("file:") || a.starts_with("http") || std::path::Path::new(a).is_file())) {
         let abs = if src.contains("://") || src.starts_with("webcal") { src.clone() } else { std::fs::canonicalize(src).map_or_else(|_| src.clone(), |p| p.display().to_string()) };
         if let Some(pid) = ctl::windows().first()
             && ctl::client(&["--pid".to_string(), pid.to_string(), "action".to_string(), "import-file".to_string(), abs.clone()]).is_ok()
@@ -77,6 +77,17 @@ fn main() {
         }
         // SAFETY: nothing else runs yet, the application is not started
         unsafe { std::env::set_var("FILI_CAL_OPEN", &abs) };
+    }
+    // `fili-cal --goto YYYY-MM-DD`: Agenda on that day (the clock card of the bar uses it)
+    if let Some(day) = args.iter().position(|a| a == "--goto").and_then(|i| args.get(i + 1)) {
+        if let Some(pid) = ctl::windows().first()
+            && ctl::client(&["--pid".to_string(), pid.to_string(), "action".to_string(), "goto".to_string(), day.clone()]).is_ok()
+        {
+            window::focus_pid(*pid);
+            return;
+        }
+        // SAFETY: nothing else runs yet, the application is not started
+        unsafe { std::env::set_var("FILI_CAL_GOTO", day) };
     }
     // One window: a second launch brings the open one to the front
     if let Some(pid) = ctl::windows().first()
