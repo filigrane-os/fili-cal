@@ -18,6 +18,7 @@ Agenda becomes a calendar you can live in.
   attached files.
 - Alerts: Snooze 10 min, Snooze 1 hour, Open; the alerts missed during a suspend as one notice; whole-day alert hour and travel time
   as settings; `fili-event emit calendar.alert`.
+- As many alerts as wanted for an event (a line each in the editor, usual choices or the ones of the file, "Add an alert").
 - An event opens as a card to read (title, when, repeat, alert, the Join button, place, notes, attachments); the Edit button switches to the form.
 - Video meetings: the link of Teams, Meet, Zoom, Webex… found in the place, notes or properties gives a Join button (week, month, list, editor,
   sidebar, right-click menu, Ctrl+J), a Join button in the alert (a click on the bubble joins) and `fili-cal join`.

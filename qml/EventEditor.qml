@@ -30,8 +30,8 @@ FiliDialog {
     // The rule has parts the editor cannot show (BYDAY, BYSETPOS…): it is kept as it is and shown as text
     property bool custom: false
     property string rrule: ""
-    // Alerts beyond the first one are kept; the choice below changes the first one
-    property var alertsRest: []
+    // The alerts of the event, in seconds before it (0 = at the time, negative = after): as many as the user wants
+    property var alertList: []
     readonly property bool isNew: eventId === ""
     // The event is shown first, not editable; the Edit button switches to the form (a new event opens on the form)
     property bool editing: false
@@ -57,12 +57,27 @@ FiliDialog {
     readonly property var repeats: [
         { label: Fili.tr("Never"), value: "" }, { label: Fili.tr("Every day"), value: "day" }, { label: Fili.tr("Every week"), value: "week" },
         { label: Fili.tr("Every month"), value: "month" }, { label: Fili.tr("Every year"), value: "year" }]
-    readonly property var alerts: [
-        { label: Fili.tr("None"), value: -1 }, { label: Fili.tr("At the time of the event"), value: 0 }, { label: Fili.tr("5 minutes before"), value: 300 },
-        { label: Fili.tr("10 minutes before"), value: 600 }, { label: Fili.tr("15 minutes before"), value: 900 },
-        { label: Fili.tr("30 minutes before"), value: 1800 }, { label: Fili.tr("1 hour before"), value: 3600 }, { label: Fili.tr("1 day before"), value: 86400 }]
+    // The usual choices; an alert of the file that is none of them is listed too
+    readonly property var presets: [0, 300, 600, 900, 1800, 3600, 7200, 86400, 172800, 604800]
+    function alertLabel(v) {
+        if (v === 0)
+            return Fili.tr("At the time of the event");
+        const n = Math.abs(v), after = v < 0;
+        const [count, unit] = n % 604800 === 0 ? [n / 604800, "w"] : n % 86400 === 0 ? [n / 86400, "d"] : n % 3600 === 0 ? [n / 3600, "h"] : [Math.round(n / 60), "m"];
+        const many = after ? { m: Fili.tr("%1 minutes after"), h: Fili.tr("%1 hours after"), d: Fili.tr("%1 days after"), w: Fili.tr("%1 weeks after") }
+            : { m: Fili.tr("%1 minutes before"), h: Fili.tr("%1 hours before"), d: Fili.tr("%1 days before"), w: Fili.tr("%1 weeks before") };
+        const one = { m: Fili.tr("1 minute before"), h: Fili.tr("1 hour before"), d: Fili.tr("1 day before"), w: Fili.tr("1 week before") };
+        return count === 1 && !after ? one[unit] : many[unit].replace("%1", count);
+    }
+    function alertChoices(current) {
+        const values = presets.includes(current) ? presets : presets.concat([current]).sort((x, y) => x - y);
+        return values.map(v => ({ label: alertLabel(v), value: v }));
+    }
+    function setAlert(i, v) { const l = alertList.slice(); l[i] = v; alertList = l; }
+    function removeAlert(i) { const l = alertList.slice(); l.splice(i, 1); alertList = l; }
+    // Adds the first usual choice that the event does not have yet (10 minutes before when it has none)
+    function addAlert() { alertList = alertList.concat([[600, 0, 300, 900, 1800, 3600, 7200, 86400].find(v => !alertList.includes(v)) ?? 600]); }
     property string every: ""
-    property int alert: 600
 
     // `directly`: open on the form (the Edit entry of the context menu) instead of on the view
     function edit(ev, directly) {
@@ -80,7 +95,6 @@ FiliDialog {
         series = ev.series;
         custom = ev.custom;
         rrule = ev.rrule;
-        alertsRest = ev.alarms.slice(1);
         zoneField.text = ev.tz;
         const s = tools.parse(ev.zstart);
         allDay = ev.allDay;
@@ -94,7 +108,7 @@ FiliDialog {
         placeField.text = ev.place;
         noteField.text = ev.note;
         every = ev.every;
-        alert = ev.alarms.length > 0 ? ev.alarms[0] : -1;
+        alertList = ev.alarms.slice().sort((x, y) => y - x);
         open();
         if (editing)
             titleField.focusField();
@@ -115,7 +129,6 @@ FiliDialog {
         calendar = (calendars.find(c => !c.hidden && !c.subscribed) || { slug: "personal" }).slug;
         custom = false;
         rrule = "";
-        alertsRest = [];
         zoneField.text = "";
         allDay = !until && date.getHours() === 0 && date.getMinutes() === 0;
         titleField.text = "";
@@ -131,7 +144,7 @@ FiliDialog {
         placeField.text = "";
         noteField.text = "";
         every = "";
-        alert = allDay ? -1 : tools.prefs.defaultAlert;
+        alertList = allDay || tools.prefs.defaultAlert < 0 ? [] : [tools.prefs.defaultAlert];
         open();
         titleField.focusField();
     }
@@ -168,7 +181,7 @@ FiliDialog {
             start: allDay ? day : day + "T" + startField.text,
             end: allDay ? (span > 0 ? tools.iso(tools.addDays(tools.parse(day), span + 1)) : "") : (endField.text === "" ? "" : day + "T" + endField.text),
             tz: zoneField.text.trim(), calendar: calendar, attachments: attachments, done: done,
-            place: placeField.text, note: noteField.text, every: every, alarms: alert < 0 ? [] : [alert].concat(alertsRest)
+            place: placeField.text, note: noteField.text, every: every, alarms: alertList
         };
         saved(eventId, JSON.stringify(o));
     }
@@ -213,7 +226,7 @@ FiliDialog {
         return day + ", " + hm(startField.text) + (endField.text !== "" ? " – " + hm(endField.text) : "") + (zoneField.text.trim() !== "" ? " (" + zoneField.text.trim() + ")" : "");
     }
     readonly property string repeatLine: custom ? Fili.tr("Custom rule") : (repeats.find(r => r.value === every && every !== "") || { label: "" }).label
-    readonly property string alertLine: alert < 0 ? "" : (alerts.find(a => a.value === alert) || { label: "" }).label + (alertsRest.length > 0 ? " " + Fili.tr("and %1 more alerts, kept").replace("%1", alertsRest.length) : "")
+    readonly property string alertLine: alertList.map(v => alertLabel(v)).join(", ")
     // The notes without the meeting link (it is the button above)
     readonly property string notesShown: (join !== "" ? noteField.text.split("<" + join + ">").join("").split(join).join("") : noteField.text).trim()
     readonly property string calendarName: (calendars.find(c => c.slug === calendar) || { name: "" }).name
@@ -352,19 +365,34 @@ FiliDialog {
         font.pixelSize: FiliTheme.sizeSmall
         color: FiliTheme.muted
     }
+    // One line for each alert, a button to add another
     Row2 {
         visible: !ed.viewing
-        label: Fili.tr("Alert")
-        FiliSelect { width: 200; model: ed.alerts; current: ed.alert; onPicked: v => ed.alert = v }
-    }
-    Text {
-        visible: !ed.viewing && (ed.alertsRest.length > 0 && ed.alert >= 0)
-        width: parent.width
-        elide: Text.ElideRight
-        text: Fili.tr("and %1 more alerts, kept").replace("%1", ed.alertsRest.length)
-        font.family: FiliTheme.font
-        font.pixelSize: FiliTheme.sizeSmall
-        color: FiliTheme.muted
+        label: Fili.tr("Alerts")
+        Column {
+            spacing: FiliTheme.space1
+            Repeater {
+                model: ed.alertList
+                Row {
+                    id: alertRow
+                    required property int modelData
+                    required property int index
+                    spacing: FiliTheme.space1
+                    FiliSelect { width: 200; model: ed.alertChoices(alertRow.modelData); current: alertRow.modelData; onPicked: v => ed.setAlert(alertRow.index, v) }
+                    FiliIconButton { anchors.verticalCenter: parent.verticalCenter; name: "x"; iconSize: 12; tip: Fili.tr("Remove this alert"); onClicked: ed.removeAlert(alertRow.index) }
+                }
+            }
+            Text {
+                visible: ed.alertList.length === 0
+                height: 26
+                verticalAlignment: Text.AlignVCenter
+                text: Fili.tr("None")
+                font.family: FiliTheme.font
+                font.pixelSize: FiliTheme.size
+                color: FiliTheme.muted
+            }
+            FiliButton { label: "+  " + Fili.tr("Add an alert"); onClicked: ed.addAlert() }
+        }
     }
     Row2 {
         visible: !ed.viewing && (ed.allDay && !ed.isNew)
