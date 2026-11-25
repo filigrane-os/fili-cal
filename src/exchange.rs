@@ -39,7 +39,7 @@ pub fn preview(source: &str) -> Value {
         .take(40)
         .map(|e| json!({"title": e.summary, "start": e.display_start().format("%Y-%m-%dT%H:%M").to_string(), "allDay": e.all_day, "place": e.place, "every": e.rule.as_ref().map_or("", |r| r.freq.name())}))
         .collect();
-    json!({"ok": true, "count": events.len(), "events": rows})
+    json!({"ok": true, "count": events.len(), "events": rows, "invite": crate::invites::describe(&text)})
 }
 
 /// Adds the events of a file to a calendar (an event with the same UID in that calendar is replaced). (added, replaced)

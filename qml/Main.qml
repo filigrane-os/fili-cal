@@ -82,6 +82,27 @@ ApplicationWindow {
         soon.refresh();
     }
     function toggleDone(ev) { cal.update(ev.id, JSON.stringify({ done: !ev.done })); soon.refresh(); }
+    // The next or the previous event of the period in reading order (Tab, Shift+Tab); the day follows it
+    function selectStep(n) {
+        const list = events.filter(e => true);
+        if (list.length === 0)
+            return;
+        const at = selected ? list.findIndex(e => e.id === selected.id && e.occ === selected.occ) : -1;
+        const to = list[Math.max(0, Math.min(list.length - 1, at < 0 ? (n > 0 ? 0 : list.length - 1) : at + n))];
+        select(to);
+        if (!tools.sameDay(tools.start(to), anchor) && viewMode !== "week" && viewMode !== "list")
+            anchor = tools.day(tools.start(to));
+    }
+    // Moves the selected event by minutes (its end by `dEnd`); the selection follows it
+    function moveSelected(dStart, dEnd) {
+        const ev = selected;
+        if (!ev || ev.readonly)
+            return;
+        const shifted = new Date(tools.parse(ev.occ));
+        shifted.setMinutes(shifted.getMinutes() + dStart);
+        changeEvent(ev, dStart, dEnd, false);
+        selected = Object.assign({}, ev, { occ: ev.allDay ? tools.iso(shifted) : tools.stamp(shifted), start: ev.allDay ? tools.iso(shifted) : tools.stamp(shifted) });
+    }
     function deleteEvent(ev, all) {
         applyDeleted(ev.id, ev.occ, all);
         if (selected && selected.id === ev.id)
@@ -303,6 +324,14 @@ ApplicationWindow {
         "undo": { on: () => !win.typing && JSON.parse(cal.undoState()).undo, run: () => { cal.undo(); soon.refresh(); } },
         "redo": { on: () => !win.typing && JSON.parse(cal.undoState()).redo, run: () => { cal.redo(); soon.refresh(); } },
         "refresh-calendars": { on: () => win.calendars.some(c => c.subscribed || c.account), run: () => { cal.syncNow(); } },
+        "next-event": { on: () => !win.typing, run: () => win.selectStep(1) },
+        "previous-event": { on: () => !win.typing, run: () => win.selectStep(-1) },
+        "move-earlier": { on: () => !win.typing && win.selected !== null && !win.selected.allDay, run: () => win.moveSelected(-15, -15) },
+        "move-later": { on: () => !win.typing && win.selected !== null && !win.selected.allDay, run: () => win.moveSelected(15, 15) },
+        "move-day-before": { on: () => !win.typing && win.selected !== null, run: () => win.moveSelected(-1440, -1440) },
+        "move-day-after": { on: () => !win.typing && win.selected !== null, run: () => win.moveSelected(1440, 1440) },
+        "shorten": { on: () => !win.typing && win.selected !== null && !win.selected.allDay && win.selected.end !== null, run: () => win.moveSelected(0, -15) },
+        "lengthen": { on: () => !win.typing && win.selected !== null && !win.selected.allDay && win.selected.end !== null, run: () => win.moveSelected(0, 15) },
         "copy-event": { on: () => !win.typing && win.selected !== null, run: () => win.copyEvent(win.selected) },
         "paste-event": { on: () => !win.typing && win.clip !== null, run: () => win.pasteAt(win.anchor) },
         "duplicate-event": { on: () => !win.typing && win.selected !== null, run: () => win.duplicateEvent(win.selected) },
@@ -360,6 +389,14 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+Q"; onActivated: win.quit() }
     Shortcut { sequence: "Ctrl+N"; enabled: !win.typing; onActivated: win.runAction("new-event") }
     Shortcut { sequence: "Ctrl+Alt+A"; enabled: !win.typing; onActivated: win.runAction("add-account") }
+    Shortcut { sequence: "Tab"; enabled: !win.typing; onActivated: win.runAction("next-event") }
+    Shortcut { sequence: "Shift+Tab"; enabled: !win.typing; onActivated: win.runAction("previous-event") }
+    Shortcut { sequence: "Alt+Up"; enabled: !win.typing; onActivated: win.runAction("move-earlier") }
+    Shortcut { sequence: "Alt+Down"; enabled: !win.typing; onActivated: win.runAction("move-later") }
+    Shortcut { sequence: "Alt+Left"; enabled: !win.typing; onActivated: win.runAction("move-day-before") }
+    Shortcut { sequence: "Alt+Right"; enabled: !win.typing; onActivated: win.runAction("move-day-after") }
+    Shortcut { sequence: "Alt+Shift+Up"; enabled: !win.typing; onActivated: win.runAction("shorten") }
+    Shortcut { sequence: "Alt+Shift+Down"; enabled: !win.typing; onActivated: win.runAction("lengthen") }
     Shortcut { sequence: "Ctrl+C"; enabled: !win.typing; onActivated: win.runAction("copy-event") }
     Shortcut { sequence: "Ctrl+V"; enabled: !win.typing; onActivated: win.runAction("paste-event") }
     Shortcut { sequence: "Ctrl+D"; enabled: !win.typing; onActivated: win.runAction("duplicate-event") }
@@ -805,6 +842,7 @@ ApplicationWindow {
             backend: cal
             calendars: win.calendars
             onImported: (source, calendar) => { cal.importSource(source, calendar); soon.refresh(); }
+            onAnswered: (source, answer, calendar) => { cal.replyInvite(source, answer, calendar); soon.refresh(); }
         }
         ExportDialog {
             id: exportDialog

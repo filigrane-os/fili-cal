@@ -12,6 +12,9 @@ FiliDialog {
     property string calendar: "personal"
     property var info: ({ ok: false })
     signal imported(string source, string calendar)
+    // An invitation was answered: "accept", "maybe" or "decline"
+    signal answered(string source, string answer, string calendar)
+    readonly property var invite: info.ok === true && info.invite ? info.invite : null
 
     title: Fili.tr("Import events")
     confirmLabel: Fili.tr("Add to calendar")
@@ -70,6 +73,43 @@ FiliDialog {
                 font.family: FiliTheme.font
                 font.pixelSize: FiliTheme.sizeSmall
                 color: FiliTheme.textSecondary
+            }
+        }
+    }
+    // An invitation (from an e-mail): the three answers; the answer is sent to the organizer by Facteur
+    Rectangle {
+        visible: dlg.invite !== null
+        width: parent.width
+        height: inviteCol.implicitHeight + 2 * FiliTheme.space3
+        radius: FiliTheme.radiusControl
+        color: FiliTheme.surfaceHover
+        Column {
+            id: inviteCol
+            anchors { left: parent.left; right: parent.right; top: parent.top; margins: FiliTheme.space3 }
+            spacing: FiliTheme.space2
+            Text {
+                width: parent.width
+                text: dlg.invite ? Fili.tr("Invitation from %1").replace("%1", dlg.invite.name) : ""
+                elide: Text.ElideRight
+                font.family: FiliTheme.font
+                font.pixelSize: FiliTheme.size
+                font.weight: FiliTheme.weightAccent
+                color: FiliTheme.text
+            }
+            Row {
+                spacing: FiliTheme.space2
+                FiliButton { label: Fili.tr("Accept"); primary: true; onClicked: { dlg.close(); dlg.answered(sourceField.text.trim(), "accept", dlg.calendar); } }
+                FiliButton { label: Fili.tr("Maybe"); onClicked: { dlg.close(); dlg.answered(sourceField.text.trim(), "maybe", dlg.calendar); } }
+                FiliButton { label: Fili.tr("Decline"); onClicked: { dlg.close(); dlg.answered(sourceField.text.trim(), "decline", dlg.calendar); } }
+            }
+            Text {
+                visible: dlg.invite && dlg.invite.account !== ""
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: dlg.invite ? Fili.tr("The answer is sent to %1 from %2.").replace("%1", dlg.invite.organizer).replace("%2", dlg.invite.account) : ""
+                font.family: FiliTheme.font
+                font.pixelSize: FiliTheme.sizeSmall
+                color: FiliTheme.muted
             }
         }
     }

@@ -126,6 +126,49 @@
      "sep": true
     },
     {
+     "label": "Select Next Event",
+     "exec": "fili-cal ctl --pid %pid action next-event",
+     "keys": "Tab"
+    },
+    {
+     "label": "Select Previous Event",
+     "exec": "fili-cal ctl --pid %pid action previous-event",
+     "keys": "Shift+Tab"
+    },
+    {
+     "label": "Move Earlier",
+     "exec": "fili-cal ctl --pid %pid action move-earlier",
+     "keys": "Alt+Up"
+    },
+    {
+     "label": "Move Later",
+     "exec": "fili-cal ctl --pid %pid action move-later",
+     "keys": "Alt+Down"
+    },
+    {
+     "label": "Move to the Day Before",
+     "exec": "fili-cal ctl --pid %pid action move-day-before",
+     "keys": "Alt+Left"
+    },
+    {
+     "label": "Move to the Day After",
+     "exec": "fili-cal ctl --pid %pid action move-day-after",
+     "keys": "Alt+Right"
+    },
+    {
+     "label": "Shorten",
+     "exec": "fili-cal ctl --pid %pid action shorten",
+     "keys": "Alt+Shift+Up"
+    },
+    {
+     "label": "Lengthen",
+     "exec": "fili-cal ctl --pid %pid action lengthen",
+     "keys": "Alt+Shift+Down"
+    },
+    {
+     "sep": true
+    },
+    {
      "label": "Search\u2026",
      "exec": "fili-cal ctl --pid %pid action search",
      "keys": "Ctrl+F"

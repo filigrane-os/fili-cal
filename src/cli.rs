@@ -31,7 +31,7 @@ use std::{
 
 use chrono::{Duration, NaiveDateTime, Timelike};
 use crate::ics::{self, Event, Freq, Rule};
-use crate::{calendars, dav, exchange, i18n, subscribe, undo, when};
+use crate::{calendars, dav, exchange, i18n, invites, subscribe, undo, when};
 use serde_json::json;
 
 /// The tests that point the store at a folder of their own take turns
@@ -211,7 +211,7 @@ fn parse_opts(args: &[String]) -> Result<Opts, String> {
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.strip_prefix("--") {
-            Some(name @ ("reminder" | "tsv" | "json" | "undo")) => o.flags.push(name.to_string()),
+            Some(name @ ("reminder" | "tsv" | "json" | "undo" | "dry-run")) => o.flags.push(name.to_string()),
             Some("alarm") => o.alarms.push(it.next().ok_or("--alarm needs a duration")?.clone()),
             Some(name @ ("at" | "end" | "for" | "place" | "note" | "every" | "interval" | "count" | "until" | "title" | "on" | "from" | "to" | "days" | "calendar" | "refresh" | "file")) => {
                 o.one.insert(name.to_string(), it.next().ok_or(format!("--{name} needs a value"))?.clone());
@@ -640,6 +640,11 @@ fn run_command(args: &[String]) -> Result<(), String> {
         }
         "tick" => tick()?,
         "free" => free(&o, now)?,
+        "reply" => {
+            let (src, ans) = (o.words.first().ok_or("reply needs a file or a link")?, o.words.get(1).ok_or("reply needs accept, maybe or decline")?);
+            let answer = invites::Answer::parse(ans).ok_or("the answer is accept, maybe or decline")?;
+            println!("{}", invites::reply(src, answer, o.one.get("calendar").map_or("", String::as_str), o.flags.iter().any(|f| f == "dry-run"))?);
+        }
         "done" => {
             let id = o.words.first().ok_or("done needs an id")?;
             let mut e = load(id)?;

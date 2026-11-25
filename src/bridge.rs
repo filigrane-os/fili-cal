@@ -149,6 +149,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "importSource"]
         fn import_source(self: Pin<&mut Agenda>, source: &QString, calendar: &QString) -> bool;
+        // Answers an invitation (answer: accept, maybe, decline): the event is kept in the calendar (slug) when accepted or tentative and
+        // the reply is sent to the organizer by Facteur; false when it failed (see message)
+        #[qinvokable]
+        #[cxx_name = "replyInvite"]
+        fn reply_invite(self: Pin<&mut Agenda>, source: &QString, answer: &QString, calendar: &QString) -> bool;
         // Writes the events of a calendar (slug, "all" = every one) to a file or into a folder; false when it failed
         #[qinvokable]
         #[cxx_name = "exportTo"]
@@ -628,6 +633,23 @@ impl qobject::Agenda {
             Ok((added, replaced)) => {
                 self.as_mut().refresh();
                 let text = if replaced == 0 { i18n::trf("Imported %1 events", &[&added]) } else { i18n::trf("Imported %1 events, %2 replaced", &[&(added + replaced), &replaced]) };
+                self.as_mut().rust_mut().message = QString::from(&text);
+                self.as_mut().rust_mut().failed = false;
+                self.as_mut().changed();
+                true
+            }
+            Err(e) => {
+                self.as_mut().fail(e);
+                false
+            }
+        }
+    }
+
+    pub fn reply_invite(mut self: Pin<&mut Self>, source: &QString, answer: &QString, calendar: &QString) -> bool {
+        let Some(a) = crate::invites::Answer::parse(&answer.to_string()) else { return false };
+        match crate::invites::reply(&source.to_string(), a, &calendar.to_string(), false) {
+            Ok(text) => {
+                self.as_mut().refresh();
                 self.as_mut().rust_mut().message = QString::from(&text);
                 self.as_mut().rust_mut().failed = false;
                 self.as_mut().changed();

@@ -88,6 +88,46 @@
       "keys": "Ctrl+R"
     },
     {
+      "name": "next-event",
+      "label": "Select Next Event",
+      "keys": "Tab"
+    },
+    {
+      "name": "previous-event",
+      "label": "Select Previous Event",
+      "keys": "Shift+Tab"
+    },
+    {
+      "name": "move-earlier",
+      "label": "Move Earlier",
+      "keys": "Alt+Up"
+    },
+    {
+      "name": "move-later",
+      "label": "Move Later",
+      "keys": "Alt+Down"
+    },
+    {
+      "name": "move-day-before",
+      "label": "Move to the Day Before",
+      "keys": "Alt+Left"
+    },
+    {
+      "name": "move-day-after",
+      "label": "Move to the Day After",
+      "keys": "Alt+Right"
+    },
+    {
+      "name": "shorten",
+      "label": "Shorten",
+      "keys": "Alt+Shift+Up"
+    },
+    {
+      "name": "lengthen",
+      "label": "Lengthen",
+      "keys": "Alt+Shift+Down"
+    },
+    {
       "name": "copy-event",
       "label": "Copy",
       "keys": "Ctrl+C"
