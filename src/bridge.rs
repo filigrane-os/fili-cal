@@ -130,6 +130,18 @@ pub mod qobject {
         // Deletes an event, or only its occurrence starting at `occ` (YYYY-MM-DDTHH:MM) when it is not empty
         #[qinvokable]
         fn remove(self: Pin<&mut Agenda>, id: &QString, occ: &QString) -> bool;
+        // Takes the last change back (Ctrl+Z) or does it again (Ctrl+Shift+Z); false when there is nothing to do (see message)
+        // The `[agenda]` settings of fili-cal.toml as JSON (see settings.rs)
+        #[qinvokable]
+        fn settings(self: &Agenda) -> QString;
+        #[qinvokable]
+        fn undo(self: Pin<&mut Agenda>) -> bool;
+        #[qinvokable]
+        fn redo(self: Pin<&mut Agenda>) -> bool;
+        // {"undo": bool, "redo": bool, "label": "what an undo takes back"}
+        #[qinvokable]
+        #[cxx_name = "undoState"]
+        fn undo_state(self: &Agenda) -> QString;
         // The one-line form ("tomorrow 14:30 Dentist", "+30m Bread") read as an event, as JSON, or {} when it is not one
         #[qinvokable]
         #[cxx_name = "parseQuick"]
@@ -393,6 +405,7 @@ impl qobject::Fili {
     }
 
     pub fn open_settings(&self) {
+        crate::settings::ensure_file();
         let _ = std::process::Command::new("xdg-open")
             .arg(theme::path())
             .stdin(std::process::Stdio::null())
@@ -507,6 +520,40 @@ impl qobject::Agenda {
                 false
             }
         }
+    }
+
+    pub fn undo(mut self: Pin<&mut Self>) -> bool {
+        self.step_back(false)
+    }
+
+    pub fn redo(mut self: Pin<&mut Self>) -> bool {
+        self.step_back(true)
+    }
+
+    fn step_back(mut self: Pin<&mut Self>, again: bool) -> bool {
+        match if again { crate::undo::redo() } else { crate::undo::undo() } {
+            Ok(label) => {
+                self.as_mut().refresh();
+                let text = if again { i18n::trf("Done again: %1", &[&label]) } else { i18n::trf("Undone: %1", &[&label]) };
+                self.as_mut().rust_mut().message = QString::from(&text);
+                self.as_mut().rust_mut().failed = false;
+                self.as_mut().changed();
+                true
+            }
+            Err(e) => {
+                self.as_mut().fail(e);
+                false
+            }
+        }
+    }
+
+    pub fn settings(&self) -> QString {
+        QString::from(&crate::settings::json())
+    }
+
+    pub fn undo_state(&self) -> QString {
+        let (undo, redo, label) = crate::undo::state();
+        QString::from(&serde_json::json!({"undo": undo, "redo": redo, "label": label}).to_string())
     }
 
     pub fn parse_quick(&self, text: &QString) -> QString {

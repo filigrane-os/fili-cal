@@ -27,7 +27,7 @@ ApplicationWindow {
     Agenda { id: cal }
     // What comes next (sidebar): a second object, its own range
     Agenda { id: soon }
-    DateTools { id: tools }
+    DateTools { id: tools; prefs: JSON.parse(cal.settings()) }
 
     // ---- State ---------------------------------------------------------------------------------------------------
     // `--view day|week|month` overrides the view kept from the last launch
@@ -37,7 +37,7 @@ ApplicationWindow {
     property date today: tools.day(new Date())
     property date now: new Date()
     property date anchor: tools.day(new Date())
-    readonly property int firstDay: Qt.locale().firstDayOfWeek
+    readonly property int firstDay: tools.prefs.firstDay >= 0 ? tools.prefs.firstDay : Qt.locale().firstDayOfWeek
     property bool aboutOpen: false
     property bool showHeader: Fili.header()
     property bool showFooter: Fili.footer()
@@ -149,7 +149,7 @@ ApplicationWindow {
         }
     }
     Timer { interval: 60000; repeat: true; running: win.visible; onTriggered: cal.tick() }
-    Timer { interval: 3000; repeat: true; running: win.visible; onTriggered: { cal.refresh(); soon.refresh(); } }
+    Timer { interval: 3000; repeat: true; running: win.visible; onTriggered: { cal.refresh(); soon.refresh(); tools.prefs = JSON.parse(cal.settings()); } }
     Timer { interval: 6000; running: cal.message !== "" && !cal.failed; onTriggered: cal.clearMessage() }
 
     // ---- Commands: the menu of the fili-bar and the assistant (fili-cal ctl) -------------------------------------------
@@ -162,6 +162,8 @@ ApplicationWindow {
         "previous": { on: () => true, run: () => win.step(-1) },
         "next": { on: () => true, run: () => win.step(1) },
         "new-event": { on: () => !win.typing, run: () => win.newEvent() },
+        "undo": { on: () => !win.typing && JSON.parse(cal.undoState()).undo, run: () => { cal.undo(); soon.refresh(); } },
+        "redo": { on: () => !win.typing && JSON.parse(cal.undoState()).redo, run: () => { cal.redo(); soon.refresh(); } },
         "quick-add": { on: () => !win.typing, run: () => quick.start() },
         "settings": { on: () => true, run: () => Fili.openSettings() },
         "toggle-header": { on: () => true, run: () => win.showHeader = !win.showHeader },
@@ -206,6 +208,8 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+Q"; onActivated: win.quit() }
     Shortcut { sequence: "Ctrl+N"; enabled: !win.typing; onActivated: win.runAction("new-event") }
     Shortcut { sequence: "Ctrl+Shift+N"; enabled: !win.typing; onActivated: win.runAction("quick-add") }
+    Shortcut { sequence: "Ctrl+Z"; enabled: !win.typing; onActivated: win.runAction("undo") }
+    Shortcut { sequence: "Ctrl+Shift+Z"; enabled: !win.typing; onActivated: win.runAction("redo") }
     Shortcut { sequence: "Ctrl+T"; onActivated: win.goToday() }
     Shortcut { sequence: "Ctrl+1"; onActivated: win.setView("day") }
     Shortcut { sequence: "Ctrl+2"; onActivated: win.setView("week") }

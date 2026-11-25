@@ -31,7 +31,7 @@ use std::{
 
 use chrono::{Duration, NaiveDateTime, Timelike};
 use crate::ics::{self, Event, Freq, Rule};
-use crate::when;
+use crate::{undo, when};
 use serde_json::json;
 
 pub fn home() -> String {
@@ -125,9 +125,22 @@ pub fn load(id: &str) -> Result<Event, String> {
 pub fn save(id: &str, e: &Event) -> Result<(), String> {
     fs::create_dir_all(store()).map_err(|x| x.to_string())?;
     let p = path_of(id)?;
+    let before = fs::read_to_string(&p).ok();
     let tmp = p.with_extension("ics.new");
-    fs::write(&tmp, ics::to_ics(e)).map_err(|x| x.to_string())?;
-    fs::rename(&tmp, &p).map_err(|x| x.to_string())
+    let text = ics::to_ics(e);
+    fs::write(&tmp, &text).map_err(|x| x.to_string())?;
+    fs::rename(&tmp, &p).map_err(|x| x.to_string())?;
+    undo::record(id, before, Some(text));
+    Ok(())
+}
+
+/// Deletes the file of an event (the step can be undone)
+pub fn delete(id: &str) -> Result<(), String> {
+    let p = path_of(id)?;
+    let before = fs::read_to_string(&p).ok();
+    fs::remove_file(&p).map_err(|x| x.to_string())?;
+    undo::record(id, before, None);
+    Ok(())
 }
 
 // ───── options ─────
@@ -198,7 +211,7 @@ fn apply(e: &mut Event, o: &Opts, now: NaiveDateTime, adding: bool) -> Result<()
     if !o.alarms.is_empty() {
         e.alarms = o.alarms.iter().filter(|a| a.as_str() != "none").map(|a| when::parse_duration(a)).collect::<Result<_, _>>()?;
     } else if adding && !o.flags.iter().any(|f| f == "reminder") {
-        e.alarms = if e.all_day { vec![] } else { vec![600] };
+        e.alarms = if e.all_day { vec![] } else { crate::settings::default_alarms() };
     }
     if let Some(freq) = o.one.get("every") {
         e.rule = if freq == "none" {
@@ -344,7 +357,22 @@ pub fn tick() -> Result<(), String> {
 
 // ───── commands ─────
 
+/// One command is one step of the journal: `fili-cal undo` takes it back
 pub fn run(args: &[String]) -> Result<(), String> {
+    match args.first().map(String::as_str) {
+        Some("undo") => println!("{}", undo::undo()?),
+        Some("redo") => println!("{}", undo::redo()?),
+        _ => {
+            let done = run_command(args);
+            let what = args.iter().skip(1).find(|a| !a.starts_with('-')).map_or(String::new(), |w| format!(" {w}"));
+            undo::commit(&format!("{}{what}", args.first().map_or("", String::as_str)));
+            return done;
+        }
+    }
+    Ok(())
+}
+
+fn run_command(args: &[String]) -> Result<(), String> {
     let now = when::now();
     let cmd = args.first().map_or("list", String::as_str);
     let o = parse_opts(args.get(1..).unwrap_or(&[]))?;
@@ -379,7 +407,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 return Err("quick: the title is missing".into());
             }
             let id = new_id();
-            let alarms = if words[0].starts_with('+') { vec![0] } else if all_day { vec![] } else { vec![600] };
+            let alarms = if words[0].starts_with('+') { vec![0] } else if all_day { vec![] } else { crate::settings::default_alarms() };
             let e = Event { uid: format!("{id}@filigrane"), summary: title, start, all_day, alarms, ..Event::default() };
             save(&id, &e)?;
             println!("{id}");
@@ -404,7 +432,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 e.skip.push(e.from_display(d));
                 save(id, &e)?;
             } else {
-                fs::remove_file(path_of(id)?).map_err(|x| x.to_string())?;
+                delete(id)?;
             }
             let _ = tick();
         }
@@ -459,7 +487,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
             print!("{out}");
         }
         "-h" | "--help" | "help" => {
-            println!("fili-cal add|edit|rm|show|list|next|tick|import|export (see the header of apps/fili-cal/src/main.rs)");
+            println!("fili-cal add|edit|rm|show|list|next|tick|import|export|undo|redo (see the header of apps/fili-cal/src/main.rs)");
         }
         other => return Err(format!("unknown command: {other} (add, quick, edit, rm, show, list, next, tick, import, export)")),
     }

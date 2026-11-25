@@ -100,7 +100,7 @@ Item {
         boundsBehavior: Flickable.StopAtBounds
         KineticScroll {}
         // Opens around 7:00 (or a little before now when it is today)
-        Component.onCompleted: contentY = Math.max(0, Math.min(contentHeight - height, (v.columns.some(d => v.tools.sameDay(d, v.today)) ? Math.max(0, v.now.getHours() - 2) : 7) * v.hourH))
+        Component.onCompleted: contentY = Math.max(0, Math.min(contentHeight - height, (v.columns.some(d => v.tools.sameDay(d, v.today)) ? Math.max(0, v.now.getHours() - 2) : v.tools.prefs.firstHour) * v.hourH))
 
         // Hours: label in the gutter, a line across
         Repeater {
@@ -116,7 +116,7 @@ Item {
                     width: v.gutter - 8
                     y: -height / 2
                     horizontalAlignment: Text.AlignRight
-                    text: v.tools.pad(index) + ":00"
+                    text: v.tools.hhmm(index, 0)
                     font.family: FiliTheme.font
                     font.pixelSize: FiliTheme.sizeSmall
                     color: FiliTheme.muted

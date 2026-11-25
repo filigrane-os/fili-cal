@@ -63,6 +63,16 @@
       "keys": "Ctrl+N"
     },
     {
+      "name": "undo",
+      "label": "Undo",
+      "keys": "Ctrl+Z"
+    },
+    {
+      "name": "redo",
+      "label": "Redo",
+      "keys": "Ctrl+Shift+Z"
+    },
+    {
       "name": "quick-add",
       "label": "Quick Add…",
       "keys": "Ctrl+Shift+N"

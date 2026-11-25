@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use crate::{
     cli,
     ics::{self, Event, Freq, Rule},
-    when, zone,
+    undo, when, zone,
 };
 
 const MINUTE: &str = "%Y-%m-%dT%H:%M";
@@ -172,9 +172,10 @@ pub fn add(json: &str) -> Result<String, String> {
     }
     apply(&mut e, &v)?;
     if v.get("alarms").is_none() {
-        e.alarms = if e.all_day { vec![] } else { vec![600] };
+        e.alarms = if e.all_day { vec![] } else { crate::settings::default_alarms() };
     }
     cli::save(&id, &e)?;
+    undo::commit(&format!("add {}", e.summary));
     let _ = cli::tick();
     Ok(id)
 }
@@ -184,6 +185,7 @@ pub fn update(id: &str, json: &str) -> Result<(), String> {
     let mut e = cli::load(id)?;
     apply(&mut e, &v)?;
     cli::save(id, &e)?;
+    undo::commit(&format!("edit {}", e.summary));
     let _ = cli::tick();
     Ok(())
 }
@@ -191,7 +193,8 @@ pub fn update(id: &str, json: &str) -> Result<(), String> {
 /// Deletes the event, or its occurrence starting at `occ` (YYYY-MM-DDTHH:MM, empty = the whole event)
 pub fn remove(id: &str, occ: &str) -> Result<(), String> {
     if occ.is_empty() {
-        std::fs::remove_file(cli::path_of(id)?).map_err(|e| e.to_string())?;
+        cli::delete(id)?;
+        undo::commit(&format!("delete {id}"));
     } else {
         let mut e = cli::load(id)?;
         let (d, _) = parse_start(occ)?;
@@ -200,6 +203,7 @@ pub fn remove(id: &str, occ: &str) -> Result<(), String> {
         }
         e.skip.push(e.from_display(d));
         cli::save(id, &e)?;
+        undo::commit(&format!("delete one occurrence of {}", e.summary));
     }
     let _ = cli::tick();
     Ok(())
@@ -219,8 +223,8 @@ pub fn parse_quick(text: &str) -> String {
         return "{}".into();
     }
     let reminder = words[0].starts_with('+');
-    let alarms: Vec<i64> = if reminder { vec![0] } else if all_day { vec![] } else { vec![600] };
-    let end = if all_day || reminder { None } else { Some(start + Duration::hours(1)) };
+    let alarms: Vec<i64> = if reminder { vec![0] } else if all_day { vec![] } else { crate::settings::default_alarms() };
+    let end = if all_day || reminder { None } else { Some(start + Duration::seconds(crate::settings::default_length())) };
     json!({"title": title, "start": if all_day { start.format("%Y-%m-%d").to_string() } else { start.format(MINUTE).to_string() }, "end": end.map(|e| e.format(MINUTE).to_string()), "allDay": all_day, "alarms": alarms, "reminder": reminder}).to_string()
 }
 

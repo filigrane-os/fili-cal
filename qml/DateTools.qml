@@ -3,6 +3,14 @@
 import QtQuick
 
 QtObject {
+    // The settings of fili-cal.toml (Main.qml sets them): clock12, firstHour, defaultLength (minutes), defaultAlert (seconds)
+    property var prefs: ({ firstDay: -1, clock12: false, firstHour: 7, defaultLength: 60, defaultAlert: 600 })
+    // "14:30" or "2:30 PM", as the settings say
+    function hhmm(h, m) {
+        if (!prefs.clock12)
+            return pad(h) + ":" + pad(m);
+        return (h % 12 === 0 ? 12 : h % 12) + (m === 0 ? "" : ":" + pad(m)) + (h < 12 ? " AM" : " PM");
+    }
     function pad(n) { return (n < 10 ? "0" : "") + n; }
     function iso(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
     function stamp(d) { return iso(d) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes()); }
@@ -30,7 +38,7 @@ QtObject {
         return s < b && (e > a || s >= a);
     }
     function eventsOn(events, d) { return events.filter(ev => onDay(ev, d)); }
-    function clock(ev) { const s = start(ev); return pad(s.getHours()) + ":" + pad(s.getMinutes()); }
+    function clock(ev) { const s = start(ev); return hhmm(s.getHours(), s.getMinutes()); }
     // A reminder: an alarm at the start and no end
     function isReminder(ev) { return !ev.allDay && !ev.end && ev.alarms.length > 0 && ev.alarms[0] === 0; }
     // Events of a day side by side without covering each other: [{ev, s, e, col, cols}] (minutes of the day)

@@ -1,103 +1,118 @@
 {
-  "name": "Agenda",
-  "app": [
+ "name": "Agenda",
+ "app": [
+  {
+   "label": "About Agenda",
+   "exec": "fili-cal ctl --pid %pid action about"
+  },
+  {
+   "label": "Settings\u2026",
+   "exec": "fili-cal ctl --pid %pid action settings"
+  }
+ ],
+ "window": [
+  {
+   "label": "Window Actions\u2026",
+   "exec": "fili-cal ctl --pid %pid action window-actions",
+   "keys": "Ctrl+Shift+W"
+  },
+  {
+   "label": "Show Window Buttons",
+   "exec": "fili-cal ctl --pid %pid action toggle-window-buttons"
+  },
+  {
+   "label": "Show Header",
+   "exec": "fili-cal ctl --pid %pid action toggle-header"
+  },
+  {
+   "label": "Show Status Bar",
+   "exec": "fili-cal ctl --pid %pid action toggle-footer"
+  }
+ ],
+ "menus": [
+  {
+   "label": "File",
+   "children": [
     {
-      "label": "About Agenda",
-      "exec": "fili-cal ctl --pid %pid action about"
+     "label": "New Event\u2026",
+     "exec": "fili-cal ctl --pid %pid action new-event",
+     "keys": "Ctrl+N"
     },
     {
-      "label": "Settings…",
-      "exec": "fili-cal ctl --pid %pid action settings"
+     "label": "Quick Add\u2026",
+     "exec": "fili-cal ctl --pid %pid action quick-add",
+     "keys": "Ctrl+Shift+N"
+    },
+    {
+     "sep": true
+    },
+    {
+     "label": "Close",
+     "exec": "fili-cal ctl --pid %pid action close",
+     "keys": "Ctrl+W"
     }
-  ],
-  "window": [
+   ]
+  },
+  {
+   "label": "Edit",
+   "children": [
     {
-      "label": "Window Actions…",
-      "exec": "fili-cal ctl --pid %pid action window-actions",
-      "keys": "Ctrl+Shift+W"
+     "label": "Undo",
+     "exec": "fili-cal ctl --pid %pid action undo",
+     "keys": "Ctrl+Z"
     },
     {
-      "label": "Show Window Buttons",
-      "exec": "fili-cal ctl --pid %pid action toggle-window-buttons"
-    },
-    {
-      "label": "Show Header",
-      "exec": "fili-cal ctl --pid %pid action toggle-header"
-    },
-    {
-      "label": "Show Status Bar",
-      "exec": "fili-cal ctl --pid %pid action toggle-footer"
+     "label": "Redo",
+     "exec": "fili-cal ctl --pid %pid action redo",
+     "keys": "Ctrl+Shift+Z"
     }
-  ],
-  "menus": [
+   ]
+  },
+  {
+   "label": "View",
+   "children": [
     {
-      "label": "File",
-      "children": [
-        {
-          "label": "New Event…",
-          "exec": "fili-cal ctl --pid %pid action new-event",
-          "keys": "Ctrl+N"
-        },
-        {
-          "label": "Quick Add…",
-          "exec": "fili-cal ctl --pid %pid action quick-add",
-          "keys": "Ctrl+Shift+N"
-        },
-        {
-          "sep": true
-        },
-        {
-          "label": "Close",
-          "exec": "fili-cal ctl --pid %pid action close",
-          "keys": "Ctrl+W"
-        }
-      ]
+     "label": "Day",
+     "exec": "fili-cal ctl --pid %pid action view-day",
+     "keys": "Ctrl+1"
     },
     {
-      "label": "View",
-      "children": [
-        {
-          "label": "Day",
-          "exec": "fili-cal ctl --pid %pid action view-day",
-          "keys": "Ctrl+1"
-        },
-        {
-          "label": "Week",
-          "exec": "fili-cal ctl --pid %pid action view-week",
-          "keys": "Ctrl+2"
-        },
-        {
-          "label": "Month",
-          "exec": "fili-cal ctl --pid %pid action view-month",
-          "keys": "Ctrl+3"
-        },
-        {
-          "sep": true
-        },
-        {
-          "label": "Today",
-          "exec": "fili-cal ctl --pid %pid action today",
-          "keys": "Ctrl+T"
-        },
-        {
-          "label": "Previous",
-          "exec": "fili-cal ctl --pid %pid action previous",
-          "keys": "Left"
-        },
-        {
-          "label": "Next",
-          "exec": "fili-cal ctl --pid %pid action next",
-          "keys": "Right"
-        },
-        {
-          "sep": true
-        },
-        {
-          "label": "Debug Logs",
-          "exec": "fili-cal ctl --pid %pid action debug",
-          "keys": "Ctrl+Shift+L"
-        }
-      ]
+     "label": "Week",
+     "exec": "fili-cal ctl --pid %pid action view-week",
+     "keys": "Ctrl+2"
+    },
+    {
+     "label": "Month",
+     "exec": "fili-cal ctl --pid %pid action view-month",
+     "keys": "Ctrl+3"
+    },
+    {
+     "sep": true
+    },
+    {
+     "label": "Today",
+     "exec": "fili-cal ctl --pid %pid action today",
+     "keys": "Ctrl+T"
+    },
+    {
+     "label": "Previous",
+     "exec": "fili-cal ctl --pid %pid action previous",
+     "keys": "Left"
+    },
+    {
+     "label": "Next",
+     "exec": "fili-cal ctl --pid %pid action next",
+     "keys": "Right"
+    },
+    {
+     "sep": true
+    },
+    {
+     "label": "Debug Logs",
+     "exec": "fili-cal ctl --pid %pid action debug",
+     "keys": "Ctrl+Shift+L"
     }
-  ]
+   ]
+  }
+ ]
 }

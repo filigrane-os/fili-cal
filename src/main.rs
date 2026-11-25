@@ -10,7 +10,9 @@ mod i18n;
 mod ics;
 mod logs;
 mod model;
+mod settings;
 mod theme;
+mod undo;
 mod when;
 mod window;
 mod zone;
@@ -33,7 +35,7 @@ fn main() {
             );
             return;
         }
-        Some("add" | "quick" | "edit" | "rm" | "show" | "list" | "next" | "tick" | "import" | "export" | "help") => {
+        Some("add" | "quick" | "edit" | "rm" | "show" | "list" | "next" | "tick" | "import" | "export" | "undo" | "redo" | "help") => {
             match cli::run(&args[1..]) {
                 Ok(()) => return,
                 Err(e) => {

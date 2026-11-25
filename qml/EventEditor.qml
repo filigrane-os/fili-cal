@@ -90,11 +90,12 @@ FiliDialog {
         lastField.text = tools.iso(date);
         const h = allDay ? 9 : date.getHours(), m = allDay ? 0 : date.getMinutes();
         startField.text = tools.pad(h) + ":" + tools.pad(m);
-        endField.text = tools.pad(Math.min(23, h + 1)) + ":" + tools.pad(m);
+        const len = tools.prefs.defaultLength, eh = Math.min(23, h + Math.floor((m + len) / 60));
+        endField.text = tools.pad(eh) + ":" + tools.pad(eh === h + Math.floor((m + len) / 60) ? (m + len) % 60 : 59);
         placeField.text = "";
         noteField.text = "";
         every = "";
-        alert = allDay ? -1 : 600;
+        alert = allDay ? -1 : tools.prefs.defaultAlert;
         open();
         titleField.focusField();
     }

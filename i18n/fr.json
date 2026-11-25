@@ -1,4 +1,8 @@
 {
+ "Done again: %1": "Refait : %1",
+ "Undone: %1": "Annulé : %1",
+ "nothing to undo": "rien à annuler",
+ "nothing to redo": "rien à refaire",
  "Same hour everywhere": "Même heure partout",
  "Last day": "Dernier jour",
  "Time zone": "Fuseau horaire",
