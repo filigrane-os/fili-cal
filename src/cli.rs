@@ -211,7 +211,7 @@ fn parse_opts(args: &[String]) -> Result<Opts, String> {
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.strip_prefix("--") {
-            Some(name @ ("reminder" | "tsv" | "json")) => o.flags.push(name.to_string()),
+            Some(name @ ("reminder" | "tsv" | "json" | "undo")) => o.flags.push(name.to_string()),
             Some("alarm") => o.alarms.push(it.next().ok_or("--alarm needs a duration")?.clone()),
             Some(name @ ("at" | "end" | "for" | "place" | "note" | "every" | "interval" | "count" | "until" | "title" | "on" | "from" | "to" | "days" | "calendar" | "refresh" | "file")) => {
                 o.one.insert(name.to_string(), it.next().ok_or(format!("--{name} needs a value"))?.clone());
@@ -479,7 +479,13 @@ pub fn tick() -> Result<(), String> {
         // an alarm that is due started between (now - catch_up) and now, for an occurrence that starts at most `longest` later
         let from = now - catch_up - Duration::hours(24);
         for start in ics::occurrences(ev, from, now + Duration::seconds(longest) + horizon) {
-            for a in &ev.alarms {
+            // the alerts of the event, and the one for the trip when the event has a place (an option: `travel_time`)
+            let travel = if ev.place.is_empty() || ev.all_day { 0 } else { crate::settings::travel_time() };
+            let mut alarms = ev.alarms.clone();
+            if travel > 0 && !alarms.contains(&travel) {
+                alarms.push(travel);
+            }
+            for a in &alarms {
                 // the alarm of a whole day goes off at 09:00 that day
                 let base = if ev.all_day { start.date().and_hms_opt(crate::settings::all_day_hour(), 0, 0).unwrap_or(start) } else { start };
                 let at = base - Duration::seconds(*a);
@@ -490,7 +496,8 @@ pub fn tick() -> Result<(), String> {
                 if fired.contains(&key) {
                     continue;
                 }
-                ringing.push((id.clone(), ev.summary.clone(), alert_body(ev, start, *a), start, (now - at).num_minutes()));
+                let body = if travel > 0 && *a == travel { i18n::trf("Time to leave for %1", &[&alert_body(ev, start, *a)]) } else { alert_body(ev, start, *a) };
+                ringing.push((id.clone(), ev.summary.clone(), body, start, (now - at).num_minutes()));
                 fired.push(key);
                 changed = true;
             }
@@ -633,6 +640,12 @@ fn run_command(args: &[String]) -> Result<(), String> {
         }
         "tick" => tick()?,
         "free" => free(&o, now)?,
+        "done" => {
+            let id = o.words.first().ok_or("done needs an id")?;
+            let mut e = load(id)?;
+            e.set_done(!o.flags.iter().any(|f| f == "undo"));
+            save(id, &e)?;
+        }
         "calendar" => calendar_command(&o.words, o.one.get("refresh").and_then(|r| r.parse().ok()))?,
         "import" => {
             let file = o.words.first().ok_or("import needs a file or a link")?;

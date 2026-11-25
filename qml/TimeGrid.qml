@@ -17,18 +17,25 @@ Item {
     property date now: new Date()
     readonly property real hourH: 52
     readonly property real gutter: 54
-    readonly property real colW: (width - gutter - scroll.width) / days
-    readonly property var columns: Array.from({ length: days }, (_, i) => tools.addDays(first, i))
+    // The week without its weekend (a setting)
+    readonly property bool workWeek: tools.prefs.workWeek === true && days === 7
+    readonly property var columns: Array.from({ length: days }, (_, i) => tools.addDays(first, i)).filter(d => !(workWeek && (d.getDay() === 0 || d.getDay() === 6)))
+    readonly property real colW: (width - gutter - scroll.width) / columns.length
+    // The selected event (id|occurrence), shown with a ring
+    property string selectedKey: ""
     signal slotActivated(date at)
     signal eventClicked(var ev)
     // A range dragged on empty hours: new event from `start` to `end`
     signal rangeCreated(date start, date end)
+    // A right click on an event, or on an empty hour (window coordinates)
+    signal eventContext(var ev, real x, real y)
+    signal slotContext(date at, real x, real y)
     // A block moved or resized: the minutes to add to its start and to its end (a day is 1440), and whether it is a copy
     signal eventChanged(var ev, int dStart, int dEnd, bool copy)
     readonly property real pad: 6
     // Minutes since midnight at a y of the hours, in steps of 15
     function snap(y) { return Math.max(0, Math.min(1440, Math.round((y - pad) / hourH * 4) * 15)); }
-    function colAt(x) { return Math.max(0, Math.min(days - 1, Math.floor((x - gutter) / colW))); }
+    function colAt(x) { return Math.max(0, Math.min(columns.length - 1, Math.floor((x - gutter) / colW))); }
     function clockText(min) { return tools.hhmm(Math.floor(min / 60) % 24, min % 60); }
     // What is being dragged: the box shown under the pointer
     property var ghost: null
@@ -94,7 +101,13 @@ Item {
                                 font.pixelSize: FiliTheme.sizeSmall
                                 color: v.tools.inkOn(wc.color)
                             }
-                            MouseArea { anchors.fill: parent; onClicked: v.eventClicked(wc.modelData) }
+                            MouseArea {
+                                anchors.fill: parent
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                onClicked: m => {
+                                    if (m.button === Qt.RightButton) { const p = mapToItem(null, m.x, m.y); v.eventContext(wc.modelData, p.x, p.y); } else v.eventClicked(wc.modelData);
+                                }
+                            }
                         }
                     }
                 }
@@ -156,7 +169,18 @@ Item {
                     property real fromY: 0
                     property bool dragging: false
                     function range(y) { const a = v.snap(slotArea.fromY + v.pad), b = v.snap(y + v.pad); return a <= b ? [a, Math.max(b, a + 15)] : [b, a]; }
-                    onPressed: m => { fromY = m.y; dragging = false; forceActiveFocus(); }
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onPressed: m => {
+                        if (m.button === Qt.RightButton) {
+                            const p = mapToItem(null, m.x, m.y), d = v.tools.day(col.modelData);
+                            d.setMinutes(v.snap(m.y + v.pad));
+                            v.slotContext(d, p.x, p.y);
+                            return;
+                        }
+                        fromY = m.y;
+                        dragging = false;
+                        forceActiveFocus();
+                    }
                     onPositionChanged: m => {
                         if (!pressed)
                             return;
@@ -196,7 +220,10 @@ Item {
                         y: modelData.s / 60 * v.hourH + 1
                         height: reminder ? 20 : Math.max(20, (modelData.e - modelData.s) / 60 * v.hourH - 2)
                         radius: 5
-                        color: FiliTheme.alpha(v.tools.colorOf(modelData.ev), blkArea.containsMouse ? 0.3 : 0.18)
+                        color: FiliTheme.alpha(v.tools.colorOf(modelData.ev), blkArea.containsMouse || v.selectedKey === modelData.ev.id + "|" + modelData.ev.occ ? 0.3 : 0.18)
+                        border.width: v.selectedKey === modelData.ev.id + "|" + modelData.ev.occ ? 1 : 0
+                        border.color: v.tools.colorOf(modelData.ev)
+                        opacity: modelData.ev.done ? 0.5 : 1
                         clip: true
                         Rectangle { width: 3; height: parent.height - 4; y: 2; x: 2; radius: 1.5; color: v.tools.colorOf(blk.modelData.ev) }
                         Column {
@@ -204,6 +231,7 @@ Item {
                             Text {
                                 width: parent.width
                                 text: (blk.reminder ? "● " : "") + blk.modelData.ev.title
+                                font.strikeout: blk.modelData.ev.done === true
                                 elide: Text.ElideRight
                                 font.family: FiliTheme.font
                                 font.pixelSize: FiliTheme.sizeList
@@ -227,7 +255,17 @@ Item {
                             property point from
                             property bool moving: false
                             function content(m) { return mapToItem(flick.contentItem, m.x, m.y); }
-                            onPressed: m => { from = content(m); moving = false; forceActiveFocus(); }
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            onPressed: m => {
+                                if (m.button === Qt.RightButton) {
+                                    const p = mapToItem(null, m.x, m.y);
+                                    v.eventContext(blk.modelData.ev, p.x, p.y);
+                                    return;
+                                }
+                                from = content(m);
+                                moving = false;
+                                forceActiveFocus();
+                            }
                             onPositionChanged: m => {
                                 // the events of a subscription cannot be moved
                                 if (!pressed || blk.modelData.ev.readonly)
@@ -247,7 +285,8 @@ Item {
                                 if (!moving) {
                                     v.eventClicked(blk.modelData.ev);
                                 } else if (g) {
-                                    const d = (g.col - col.index) * 1440 + (g.s - blk.modelData.s);
+                                    // days between the two columns (a hidden weekend is skipped by the columns, not by the calendar)
+                                    const d = Math.round((v.columns[g.col] - col.modelData) / 86400000) * 1440 + (g.s - blk.modelData.s);
                                     if (d !== 0)
                                         v.eventChanged(blk.modelData.ev, d, d, g.copy);
                                 }

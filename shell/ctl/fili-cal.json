@@ -88,6 +88,31 @@
       "keys": "Ctrl+R"
     },
     {
+      "name": "copy-event",
+      "label": "Copy",
+      "keys": "Ctrl+C"
+    },
+    {
+      "name": "paste-event",
+      "label": "Paste",
+      "keys": "Ctrl+V"
+    },
+    {
+      "name": "duplicate-event",
+      "label": "Duplicate",
+      "keys": "Ctrl+D"
+    },
+    {
+      "name": "toggle-done",
+      "label": "Mark as Done",
+      "keys": "Ctrl+Shift+D"
+    },
+    {
+      "name": "delete-event",
+      "label": "Delete",
+      "keys": "Delete"
+    },
+    {
       "name": "search",
       "label": "Search…",
       "keys": "Ctrl+F",

@@ -6,6 +6,9 @@
 //! clock = 24                # 24 or 12 hours
 //! default_length = "1h"     # length of a new event
 //! default_alert = "10m"     # alert of a new event, "none" for no alert
+//! work_week = false         # hide Saturday and Sunday in the week and month views
+//! week_numbers = false      # the number of the week in the month view
+//! travel_time = "0m"        # an extra alert this long before an event that has a place ("20m")
 //! first_hour = 7            # the hour the day and week views scroll to when today is not shown
 //! ```
 use std::fs;
@@ -35,7 +38,12 @@ pub fn ensure_file() {
     if let Some(dir) = p.parent() {
         let _ = fs::create_dir_all(dir);
     }
-    let _ = fs::write(&p, "[agenda]\n# first_day = \"monday\"     # monday ... sunday; default: the first day of the language\n# clock = 24             # 24 or 12 hours\n# default_length = \"1h\"  # length of a new event\n# default_alert = \"10m\"  # alert of a new timed event, \"none\" for no alert\n# first_hour = 7         # the hour the day and week views scroll to when today is not shown\n# all_day_alert_hour = 9 # the hour the alert of a whole-day event rings\n");
+    let _ = fs::write(&p, "[agenda]\n# first_day = \"monday\"     # monday ... sunday; default: the first day of the language\n# clock = 24             # 24 or 12 hours\n# default_length = \"1h\"  # length of a new event\n# default_alert = \"10m\"  # alert of a new timed event, \"none\" for no alert\n# work_week = false      # hide Saturday and Sunday in the week and month views\n# week_numbers = false   # the number of the week in the month view\n# travel_time = \"20m\"  # an extra alert this long before an event that has a place\n# first_hour = 7         # the hour the day and week views scroll to when today is not shown\n# all_day_alert_hour = 9 # the hour the alert of a whole-day event rings\n");
+}
+
+/// Time to get to an event that has a place, in seconds (an extra alert that long before it; 0 = none, the default)
+pub fn travel_time() -> i64 {
+    value("travel_time").and_then(|v| when::parse_duration(&v).ok()).filter(|s| *s > 0).unwrap_or(0)
 }
 
 /// The hour an alert of a whole-day event rings (default 9)
@@ -77,6 +85,8 @@ pub fn json() -> String {
     serde_json::json!({
         "firstDay": first_day,
         "clock12": value("clock").is_some_and(|c| c == "12"),
+        "workWeek": value("work_week").is_some_and(|w| w == "true"),
+        "weekNumbers": value("week_numbers").is_some_and(|w| w == "true"),
         "firstHour": value("first_hour").and_then(|h| h.parse::<u32>().ok()).filter(|h| *h < 24).unwrap_or(7),
         "defaultLength": default_length() / 60,
         "defaultAlert": default_alert().unwrap_or(-1),

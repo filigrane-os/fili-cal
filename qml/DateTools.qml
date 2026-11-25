@@ -22,6 +22,12 @@ QtObject {
             return pad(h) + ":" + pad(m);
         return (h % 12 === 0 ? 12 : h % 12) + (m === 0 ? "" : ":" + pad(m)) + (h < 12 ? " AM" : " PM");
     }
+    // ISO number of the week of a date
+    function isoWeek(d) {
+        const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+        t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+        return Math.ceil(((t - Date.UTC(t.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7);
+    }
     function pad(n) { return (n < 10 ? "0" : "") + n; }
     function iso(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
     function stamp(d) { return iso(d) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes()); }

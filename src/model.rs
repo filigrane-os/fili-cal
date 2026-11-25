@@ -31,7 +31,7 @@ fn one(id: &str, e: &Event, occ: NaiveDateTime, color: &str, readonly: bool) -> 
         "id": id, "title": e.summary, "start": occ.format(MINUTE).to_string(),
         "end": end.map(|x| x.format(MINUTE).to_string()), "allDay": e.all_day, "place": e.place, "note": e.note,
         "tz": e.tzid.clone().unwrap_or_default(),
-        "calendar": if e.calendar.is_empty() { calendars::DEFAULT } else { &e.calendar }, "color": color, "readonly": readonly, "zstart": zone_of(occ), "zend": end.map(zone_of),
+        "calendar": if e.calendar.is_empty() { calendars::DEFAULT } else { &e.calendar }, "color": color, "readonly": readonly, "done": e.done(), "attachments": e.attachments(), "zstart": zone_of(occ), "zend": end.map(zone_of),
         "alarms": e.alarms, "every": e.rule.as_ref().map_or("", |r| freq_word(r.freq)),
         "interval": e.rule.as_ref().map_or(1, |r| r.interval), "count": e.rule.as_ref().and_then(|r| r.count),
         "until": e.rule.as_ref().and_then(|r| r.until).map(|u| u.format(MINUTE).to_string()),
@@ -165,6 +165,12 @@ fn apply(e: &mut Event, v: &Value) -> Result<(), String> {
         && end < e.start
     {
         return Err("the end is before the start".into());
+    }
+    if let Some(d) = v.get("done").and_then(Value::as_bool) {
+        e.set_done(d);
+    }
+    if let Some(a) = v.get("attachments").and_then(Value::as_array) {
+        e.set_attachments(&a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect::<Vec<_>>());
     }
     if let Some(a) = v.get("alarms").and_then(Value::as_array) {
         e.alarms = a.iter().filter_map(Value::as_i64).collect();

@@ -98,6 +98,34 @@
      "sep": true
     },
     {
+     "label": "Copy",
+     "exec": "fili-cal ctl --pid %pid action copy-event",
+     "keys": "Ctrl+C"
+    },
+    {
+     "label": "Paste",
+     "exec": "fili-cal ctl --pid %pid action paste-event",
+     "keys": "Ctrl+V"
+    },
+    {
+     "label": "Duplicate",
+     "exec": "fili-cal ctl --pid %pid action duplicate-event",
+     "keys": "Ctrl+D"
+    },
+    {
+     "label": "Mark as Done",
+     "exec": "fili-cal ctl --pid %pid action toggle-done",
+     "keys": "Ctrl+Shift+D"
+    },
+    {
+     "label": "Delete",
+     "exec": "fili-cal ctl --pid %pid action delete-event",
+     "keys": "Delete"
+    },
+    {
+     "sep": true
+    },
+    {
      "label": "Search\u2026",
      "exec": "fili-cal ctl --pid %pid action search",
      "keys": "Ctrl+F"

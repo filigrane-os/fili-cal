@@ -9,6 +9,10 @@ Item {
     property var events: []
     property date today: new Date()
     signal eventClicked(var ev)
+    signal eventContext(var ev, real x, real y)
+    // The box of a whole-day event (a reminder without a time) was ticked
+    signal doneToggled(var ev)
+    property string selectedKey: ""
 
     // [{ day: Date, items: [ev] }] for the days that have something
     readonly property var days: {
@@ -73,26 +77,46 @@ Item {
                 visible: !row.modelData.head
                 anchors { fill: parent; leftMargin: FiliTheme.space2; rightMargin: FiliTheme.space2; topMargin: 1; bottomMargin: 1 }
                 radius: FiliTheme.radiusControl
-                color: area.containsMouse ? FiliTheme.surfaceHover : "transparent"
+                color: area.containsMouse || (!row.modelData.head && v.selectedKey === row.modelData.ev.id + "|" + row.modelData.ev.occ) ? FiliTheme.surfaceHover : "transparent"
             }
             Item {
                 visible: !row.modelData.head
                 anchors.fill: parent
                 Rectangle { x: FiliTheme.margin; y: 8; width: 3; height: parent.height - 16; radius: 1.5; color: row.modelData.head ? "transparent" : v.tools.colorOf(row.modelData.ev) }
-                Text {
+                // A whole-day event can be ticked as done
+                Rectangle {
+                    id: tick
+                    readonly property bool shown: !row.modelData.head && row.modelData.ev.allDay === true && row.modelData.ev.readonly !== true
+                    visible: shown
                     x: FiliTheme.margin + 14
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 16
+                    height: 16
+                    radius: 4
+                    color: shown && row.modelData.ev.done ? FiliTheme.accentColor : "transparent"
+                    border.width: 2
+                    border.color: shown && row.modelData.ev.done ? FiliTheme.accentColor : FiliTheme.muted
+                    Text { visible: parent.color !== "transparent"; anchors.centerIn: parent; text: "✓"; font.pixelSize: 11; color: FiliTheme.background }
+                    MouseArea { anchors.fill: parent; anchors.margins: -4; onClicked: v.doneToggled(row.modelData.ev) }
+                    Accessible.role: Accessible.CheckBox
+                    Accessible.name: shown ? row.modelData.ev.title : ""
+                    Accessible.checked: shown && row.modelData.ev.done === true
+                }
+                Text {
+                    x: FiliTheme.margin + 14 + (tick.shown ? 24 : 0)
                     width: 70
                     anchors.verticalCenter: parent.verticalCenter
-                    text: row.modelData.head ? "" : row.modelData.ev.allDay ? Fili.tr("All day") : v.tools.clock(row.modelData.ev)
+                    text: row.modelData.head ? "" : row.modelData.ev.allDay ? (tick.shown ? "" : Fili.tr("All day")) : v.tools.clock(row.modelData.ev)
                     font.family: FiliTheme.font
                     font.pixelSize: FiliTheme.sizeList
                     color: FiliTheme.textSecondary
                 }
                 Column {
-                    anchors { left: parent.left; leftMargin: FiliTheme.margin + 94; right: parent.right; rightMargin: FiliTheme.margin; verticalCenter: parent.verticalCenter }
+                    anchors { left: parent.left; leftMargin: FiliTheme.margin + 94 + (tick.shown ? 24 : 0); right: parent.right; rightMargin: FiliTheme.margin; verticalCenter: parent.verticalCenter }
                     Text {
                         width: parent.width
                         text: row.modelData.head ? "" : row.modelData.ev.title
+                        font.strikeout: !row.modelData.head && row.modelData.ev.done === true
                         elide: Text.ElideRight
                         font.family: FiliTheme.font
                         font.pixelSize: FiliTheme.size
@@ -108,7 +132,15 @@ Item {
                         color: FiliTheme.muted
                     }
                 }
-                MouseArea { id: area; anchors.fill: parent; hoverEnabled: true; onClicked: v.eventClicked(row.modelData.ev) }
+                MouseArea {
+                    id: area
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onClicked: m => {
+                        if (m.button === Qt.RightButton) { const p = mapToItem(null, m.x, m.y); v.eventContext(row.modelData.ev, p.x, p.y); } else v.eventClicked(row.modelData.ev);
+                    }
+                }
                 Accessible.role: Accessible.ListItem
                 Accessible.name: row.modelData.head ? "" : row.modelData.ev.title
             }

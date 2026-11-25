@@ -15,6 +15,9 @@ FiliDialog {
     property bool series: false
     // The event comes from a subscription: it can be read, not changed
     property bool readOnly: false
+    // Files attached to the event (paths): a file dropped on the card is added; the owner of the file is Casier, not Agenda
+    property var attachments: []
+    property bool done: false
     // The calendars [{slug, name, color, hidden}] and the one the event is in
     property var calendars: []
     property string calendar: "personal"
@@ -58,6 +61,8 @@ FiliDialog {
         occ = ev.occ;
         calendar = ev.calendar;
         readOnly = ev.readonly === true;
+        attachments = ev.attachments || [];
+        done = ev.done === true;
         first = ev.zfirst;
         occZ = ev.zstart;
         series = ev.series;
@@ -89,6 +94,8 @@ FiliDialog {
         series = false;
         occZ = "";
         readOnly = false;
+        attachments = [];
+        done = false;
         calendar = (calendars.find(c => !c.hidden && !c.subscribed) || { slug: "personal" }).slug;
         custom = false;
         rrule = "";
@@ -112,6 +119,12 @@ FiliDialog {
         open();
         titleField.focusField();
     }
+    // A file dropped on the window while the editor is open: attached to this event
+    function attach(url) {
+        const path = decodeURIComponent(String(url).replace(/^file:\/\//, ""));
+        if (path.startsWith("/") && !attachments.includes(path))
+            attachments = attachments.concat([path]);
+    }
     // Whole days dragged over in the month: a whole-day event from `first` to `last`
     function createDays(first, last) {
         create(first);
@@ -131,7 +144,7 @@ FiliDialog {
             title: titleField.text.trim(), allDay: allDay,
             start: allDay ? day : day + "T" + startField.text,
             end: allDay ? (span > 0 ? tools.iso(tools.addDays(tools.parse(day), span + 1)) : "") : (endField.text === "" ? "" : day + "T" + endField.text),
-            tz: zoneField.text.trim(), calendar: calendar,
+            tz: zoneField.text.trim(), calendar: calendar, attachments: attachments, done: done,
             place: placeField.text, note: noteField.text, every: every, alarms: alert < 0 ? [] : [alert].concat(alertsRest)
         };
         saved(eventId, JSON.stringify(o));
@@ -221,12 +234,58 @@ FiliDialog {
         color: FiliTheme.muted
     }
     Row2 {
+        visible: ed.allDay && !ed.isNew
+        label: Fili.tr("Status")
+        FiliCheckBox { checked: ed.done; label: Fili.tr("Done"); onToggled: ed.done = !ed.done }
+    }
+    Row2 {
         label: Fili.tr("Place")
         FiliTextField { id: placeField; width: ed.cardWidth - 2 * FiliTheme.space5 - 84 - FiliTheme.space3; placeholder: Fili.tr("Where"); onAccepted: ed.accept() }
     }
     Row2 {
         label: Fili.tr("Notes")
         FiliTextField { id: noteField; width: ed.cardWidth - 2 * FiliTheme.space5 - 84 - FiliTheme.space3; placeholder: Fili.tr("Notes"); onAccepted: ed.accept() }
+    }
+    // Attached files: drop one on this card; a click opens it with the application of the user
+    Column {
+        width: parent.width
+        spacing: 2
+        Text {
+            visible: ed.attachments.length === 0 && !ed.readOnly
+            text: Fili.tr("Drop a file here to attach it")
+            font.family: FiliTheme.font
+            font.pixelSize: FiliTheme.sizeSmall
+            color: FiliTheme.muted
+        }
+        Repeater {
+            model: ed.attachments
+            Item {
+                id: att
+                required property string modelData
+                width: parent.width
+                height: 22
+                Text {
+                    anchors { left: parent.left; right: rm.left; rightMargin: FiliTheme.space2; verticalCenter: parent.verticalCenter }
+                    text: "📎 " + att.modelData.split("/").pop()
+                    elide: Text.ElideMiddle
+                    font.family: FiliTheme.font
+                    font.pixelSize: FiliTheme.size
+                    color: attArea.containsMouse ? FiliTheme.accentColor : FiliTheme.text
+                    MouseArea { id: attArea; anchors.fill: parent; hoverEnabled: true; onClicked: Fili.openPath(att.modelData) }
+                }
+                FiliIconButton {
+                    id: rm
+                    anchors.right: parent.right
+                    visible: !ed.readOnly
+                    name: "x"
+                    iconSize: 12
+                    tip: Fili.tr("Remove the attachment")
+                    onClicked: ed.attachments = ed.attachments.filter(p => p !== att.modelData)
+                }
+                Accessible.role: Accessible.Button
+                Accessible.name: att.modelData
+            }
+        }
     }
     Row {
         visible: !ed.isNew && !ed.readOnly

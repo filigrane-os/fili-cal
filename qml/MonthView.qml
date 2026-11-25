@@ -13,7 +13,15 @@ Item {
     property date today: new Date()
     readonly property date gridStart: tools.weekStart(new Date(anchor.getFullYear(), anchor.getMonth(), 1), firstDay)
     readonly property real headH: 28
-    readonly property real cellW: width / 7
+    // Week numbers on the left and a week without its weekend are settings; `colList` holds the positions (0 = first day of the week) shown
+    readonly property real wkW: tools.prefs.weekNumbers === true ? 30 : 0
+    readonly property var colList: [0, 1, 2, 3, 4, 5, 6].filter(p => !(tools.prefs.workWeek === true && ((firstDay + p) % 7 === 0 || (firstDay + p) % 7 === 6)))
+    readonly property real cellW: (width - wkW) / colList.length
+    // The selected event (id|occurrence), shown with a ring; the day whose events are all listed in a popover (-1 = none)
+    property string selectedKey: ""
+    property int moreIndex: -1
+    signal eventContext(var ev, real x, real y)
+    signal slotContext(date at, real x, real y)
     readonly property real cellH: Math.max(40, (height - headH) / 6)
     signal dayClicked(date d)
     signal dayActivated(date d)
@@ -26,22 +34,23 @@ Item {
     property int rangeFrom: -1
     property int rangeTo: -1
     function indexAt(x, y) {
-        return Math.max(0, Math.min(5, Math.floor((y - headH) / cellH))) * 7 + Math.max(0, Math.min(6, Math.floor(x / cellW)));
+        return Math.max(0, Math.min(5, Math.floor((y - headH) / cellH))) * 7 + colList[Math.max(0, Math.min(colList.length - 1, Math.floor((x - wkW) / cellW)))];
     }
     function reset() { dropIndex = -1; rangeFrom = -1; rangeTo = -1; }
 
     // Weekday names
     Row {
+        x: v.wkW
         height: v.headH
         Repeater {
-            model: 7
+            model: v.colList
             Item {
-                required property int index
+                required property int modelData
                 width: v.cellW
                 height: v.headH
                 Text {
                     anchors { left: parent.left; leftMargin: FiliTheme.space2 + 2; verticalCenter: parent.verticalCenter }
-                    text: Qt.locale().dayName((v.firstDay + index) % 7, Locale.ShortFormat).toUpperCase()
+                    text: Qt.locale().dayName((v.firstDay + modelData) % 7, Locale.ShortFormat).toUpperCase()
                     font.family: FiliTheme.font
                     font.pixelSize: FiliTheme.sizeSmall
                     font.weight: FiliTheme.weightAccent
@@ -65,7 +74,9 @@ Item {
             readonly property var dayEvents: v.tools.eventsOn(v.events, date)
             readonly property int room: Math.max(0, Math.floor((height - 28) / 18))
             readonly property int shown: dayEvents.length > room ? Math.max(0, room - 1) : dayEvents.length
-            x: (index % 7) * v.cellW
+            readonly property int slot: v.colList.indexOf(index % 7)
+            visible: slot >= 0
+            x: v.wkW + slot * v.cellW
             y: v.headH + Math.floor(index / 7) * v.cellH
             width: v.cellW
             height: v.cellH
@@ -78,7 +89,18 @@ Item {
                 anchors.fill: parent
                 onClicked: v.dayClicked(cell.date)
                 onDoubleClicked: v.dayActivated(cell.date)
-                onPressed: { v.rangeFrom = cell.index; v.rangeTo = -1; forceActiveFocus(); }
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                onPressed: m => {
+                    if (m.button === Qt.RightButton) {
+                        const p = mapToItem(null, m.x, m.y), d = new Date(cell.date);
+                        d.setHours(9);
+                        v.slotContext(d, p.x, p.y);
+                        return;
+                    }
+                    v.rangeFrom = cell.index;
+                    v.rangeTo = -1;
+                    forceActiveFocus();
+                }
                 onPositionChanged: m => {
                     if (pressed)
                         v.rangeTo = v.indexAt(mapToItem(v, m.x, m.y).x, mapToItem(v, m.x, m.y).y);
@@ -123,11 +145,14 @@ Item {
                         radius: 4
                         readonly property color tone: v.tools.colorOf(modelData)
                         color: whole ? tone : FiliTheme.alpha(tone, chipArea.containsMouse ? 0.28 : 0.16)
-                        opacity: cell.inMonth ? 1 : 0.55
+                        opacity: (cell.inMonth ? 1 : 0.55) * (modelData.done ? 0.5 : 1)
+                        border.width: v.selectedKey === modelData.id + "|" + modelData.occ ? 1 : 0
+                        border.color: FiliTheme.text
                         Rectangle { visible: !chip.whole; width: 3; height: parent.height - 4; y: 2; radius: 1.5; color: chip.tone }
                         Text {
                             anchors { left: parent.left; leftMargin: chip.whole ? 5 : 8; right: parent.right; rightMargin: 4; verticalCenter: parent.verticalCenter }
                             text: (chip.whole ? "" : v.tools.clock(chip.modelData) + " ") + chip.modelData.title
+                            font.strikeout: chip.modelData.done === true
                             elide: Text.ElideRight
                             font.family: FiliTheme.font
                             font.pixelSize: FiliTheme.sizeSmall
@@ -139,7 +164,17 @@ Item {
                             hoverEnabled: true
                             property point from
                             property bool moving: false
-                            onPressed: m => { from = mapToItem(v, m.x, m.y); moving = false; forceActiveFocus(); }
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            onPressed: m => {
+                                if (m.button === Qt.RightButton) {
+                                    const p = mapToItem(null, m.x, m.y);
+                                    v.eventContext(chip.modelData, p.x, p.y);
+                                    return;
+                                }
+                                from = mapToItem(v, m.x, m.y);
+                                moving = false;
+                                forceActiveFocus();
+                            }
                             onPositionChanged: m => {
                                 // the events of a subscription cannot be moved
                                 if (!pressed || chip.modelData.readonly)
@@ -173,6 +208,86 @@ Item {
                     font.family: FiliTheme.font
                     font.pixelSize: FiliTheme.sizeSmall
                     color: FiliTheme.muted
+                    MouseArea { anchors.fill: parent; onClicked: v.moreIndex = cell.index }
+                }
+            }
+        }
+    }
+
+    // Week numbers
+    Repeater {
+        model: v.wkW > 0 ? 6 : 0
+        Text {
+            required property int index
+            x: 0
+            y: v.headH + index * v.cellH + FiliTheme.space1 + 3
+            width: v.wkW - 6
+            horizontalAlignment: Text.AlignRight
+            // the week of its Thursday, as the ISO number counts it
+            text: v.tools.isoWeek(v.tools.addDays(v.gridStart, index * 7 + ((4 - v.firstDay + 7) % 7)))
+            font.family: FiliTheme.mono
+            font.pixelSize: FiliTheme.sizeSmall
+            color: FiliTheme.muted
+            Accessible.name: Fili.tr("Week %1").replace("%1", text)
+        }
+    }
+
+    // "+n more": every event of the day in a small popover next to its cell
+    Item {
+        id: more
+        visible: v.moreIndex >= 0
+        anchors.fill: parent
+        z: 10
+        readonly property date day: v.tools.addDays(v.gridStart, Math.max(0, v.moreIndex))
+        readonly property var list: v.moreIndex >= 0 ? v.tools.eventsOn(v.events, day) : []
+        MouseArea { anchors.fill: parent; onClicked: v.moreIndex = -1 }
+        Rectangle {
+            readonly property int slot: v.colList.indexOf(Math.max(0, v.moreIndex) % 7)
+            width: Math.min(260, v.width - 8)
+            height: Math.min(v.height - 8, 34 + more.list.length * 22 + 8)
+            x: Math.max(4, Math.min(v.width - width - 4, v.wkW + Math.max(0, slot) * v.cellW))
+            y: Math.max(4, Math.min(v.height - height - 4, v.headH + Math.floor(Math.max(0, v.moreIndex) / 7) * v.cellH))
+            radius: FiliTheme.radiusWindow
+            color: FiliTheme.surface
+            border.width: FiliTheme.borderWidth
+            border.color: FiliTheme.border
+            Text {
+                x: FiliTheme.space3
+                y: FiliTheme.space2
+                text: Qt.locale().toString(more.day, "dddd d MMMM")
+                font.family: FiliTheme.font
+                font.pixelSize: FiliTheme.size
+                font.weight: FiliTheme.weightAccent
+                color: FiliTheme.text
+            }
+            Column {
+                x: FiliTheme.space2
+                y: 32
+                width: parent.width - 2 * FiliTheme.space2
+                spacing: 2
+                Repeater {
+                    model: more.list
+                    Rectangle {
+                        id: row
+                        required property var modelData
+                        width: parent.width
+                        height: 20
+                        radius: 4
+                        color: FiliTheme.alpha(v.tools.colorOf(modelData), rowArea.containsMouse ? 0.3 : 0.18)
+                        Rectangle { visible: !modelData.allDay; width: 3; height: parent.height - 4; y: 2; radius: 1.5; color: v.tools.colorOf(modelData) }
+                        Text {
+                            anchors { left: parent.left; leftMargin: 8; right: parent.right; rightMargin: 4; verticalCenter: parent.verticalCenter }
+                            text: (modelData.allDay ? "" : v.tools.clock(modelData) + " ") + modelData.title
+                            elide: Text.ElideRight
+                            font.family: FiliTheme.font
+                            font.pixelSize: FiliTheme.sizeSmall
+                            font.strikeout: modelData.done === true
+                            color: FiliTheme.text
+                        }
+                        MouseArea { id: rowArea; anchors.fill: parent; hoverEnabled: true; onClicked: { v.moreIndex = -1; v.eventClicked(row.modelData); } }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: modelData.title
+                    }
                 }
             }
         }

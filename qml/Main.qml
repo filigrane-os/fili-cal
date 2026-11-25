@@ -55,7 +55,66 @@ ApplicationWindow {
     onActiveChanged: if (active) attentionText = ""
     readonly property bool headerShown: showHeader
     readonly property bool footerShown: showFooter || cal.message !== "" || attending
-    readonly property bool typing: quick.visible || editor.visible
+    // A dialog or the quick add is open: the keys of the window leave it alone
+    readonly property bool typing: quick.visible || editor.visible || importDialog.visible || exportDialog.visible || searchDialog.visible || accountDialog.visible || calendarDialog.visible
+    // The event the user last pointed at (a click, a right click): the one Copy, Duplicate, Delete and Enter act on; and the one copied
+    property var selected: null
+    property var clip: null
+    readonly property string selectedKey: selected ? selected.id + "|" + selected.occ : ""
+    function select(ev) { selected = ev; Qt.callLater(publishContext); }
+    function eventText(ev) {
+        const s = tools.start(ev);
+        return ev.title + " — " + Qt.locale().toString(s, ev.allDay ? "dddd d MMMM yyyy" : "dddd d MMMM yyyy, HH:mm") + (ev.place ? " · " + ev.place : "");
+    }
+    // An event as the JSON that makes a new one starting at `at` (the same length, the same alerts)
+    function copyJson(ev, at) {
+        const text = d => ev.allDay ? tools.iso(d) : tools.stamp(d);
+        const s = tools.start(ev), len = ev.end ? tools.parse(ev.end) - s : 0;
+        return JSON.stringify({ title: ev.title, allDay: ev.allDay, start: text(at), end: ev.end ? text(new Date(at.getTime() + len)) : "", place: ev.place, note: ev.note, alarms: ev.alarms, calendar: ev.readonly ? "" : ev.calendar });
+    }
+    function duplicateEvent(ev) { cal.add(copyJson(ev, tools.start(ev))); soon.refresh(); }
+    function copyEvent(ev) { clip = ev; Fili.copyText(eventText(ev)); }
+    function pasteAt(day) {
+        if (!clip)
+            return;
+        const s = tools.start(clip);
+        cal.add(copyJson(clip, new Date(day.getFullYear(), day.getMonth(), day.getDate(), s.getHours(), s.getMinutes())));
+        soon.refresh();
+    }
+    function toggleDone(ev) { cal.update(ev.id, JSON.stringify({ done: !ev.done })); soon.refresh(); }
+    function deleteEvent(ev, all) {
+        applyDeleted(ev.id, ev.occ, all);
+        if (selected && selected.id === ev.id)
+            selected = null;
+    }
+    // Moves the day the user is on (the selected day of the month, the day of the week)
+    function moveDay(n) { anchor = tools.addDays(anchor, n); }
+    // The menu of a right click
+    property var ctxEvent: null
+    property date ctxDay: new Date()
+    function showContext(ev, x, y) {
+        select(ev);
+        ctxEvent = ev;
+        const o = ctxMenu.parent.mapToItem(null, 0, 0);
+        ctxMenu.open(x - o.x, y - o.y, [
+            { id: "edit", label: ev.readonly ? Fili.tr("Open") : Fili.tr("Edit…") },
+            { id: "duplicate", label: Fili.tr("Duplicate") },
+            { id: "copy", label: Fili.tr("Copy"), hint: "Ctrl+C" },
+            ...(ev.allDay && !ev.readonly ? [{ id: "done", label: ev.done ? Fili.tr("Mark as not done") : Fili.tr("Mark as done") }] : []),
+            { separator: true },
+            { id: "delete", label: ev.series ? Fili.tr("Delete this occurrence") : Fili.tr("Delete"), enabled: !ev.readonly, danger: true, hint: "Del" },
+            ...(ev.series && !ev.readonly ? [{ id: "delete-series", label: Fili.tr("Delete the series"), danger: true }] : [])
+        ]);
+    }
+    function showSlotContext(day, x, y) {
+        ctxEvent = null;
+        ctxDay = day;
+        const o = ctxMenu.parent.mapToItem(null, 0, 0);
+        ctxMenu.open(x - o.x, y - o.y, [
+            { id: "new", label: Fili.tr("New event here…") },
+            { id: "paste", label: Fili.tr("Paste"), enabled: clip !== null, hint: "Ctrl+V" }
+        ]);
+    }
     readonly property var events: JSON.parse(cal.events)
     // The calendars [{slug, name, color, hidden}]
     property var calendars: JSON.parse(cal.calendars())
@@ -88,7 +147,7 @@ ApplicationWindow {
     // What the window shows, for the assistant and `fili-context` (no places or notes beyond the title, place and times)
     function publishContext() {
         const ev = e => ({ id: e.id, title: e.title, start: e.start, end: e.end, all_day: e.allDay, place: e.place, calendar: e.calendar });
-        const sel = editor.visible && editor.eventId !== "" ? events.find(e => e.id === editor.eventId && e.occ === editor.occ) : undefined;
+        const sel = editor.visible && editor.eventId !== "" ? events.find(e => e.id === editor.eventId && e.occ === editor.occ) : selected ? events.find(e => e.id === selected.id && e.occ === selected.occ) : undefined;
         cal.publishContext(JSON.stringify({ view: viewMode, from: tools.iso(rangeStart), to: tools.iso(rangeEnd), day: tools.iso(anchor), events: events.slice(0, 60).map(ev), selected: sel ? ev(sel) : null }));
     }
     function reload() { cal.load(tools.iso(rangeStart), tools.iso(rangeEnd)); }
@@ -107,7 +166,15 @@ ApplicationWindow {
         anchors.fill: parent
         z: 1000
         keys: ["text/uri-list"]
-        onDropped: drop => { if (drop.hasUrls && drop.urls.length > 0) importDialog.show(drop.urls[0].toString()); }
+        onDropped: drop => {
+            if (!drop.hasUrls || drop.urls.length === 0)
+                return;
+            // on an open event the file is an attachment, elsewhere an iCalendar file to import
+            if (editor.visible && !editor.readOnly)
+                drop.urls.forEach(u => editor.attach(u.toString()));
+            else if (!win.typing)
+                importDialog.show(drop.urls[0].toString());
+        }
     }
     // `fili-cal --shot FILE [view]`: draws the window into a PNG and quits (documentation, tests without a screen)
     Timer {
@@ -129,8 +196,9 @@ ApplicationWindow {
         if (viewMode === "day")
             return L.dayName(anchor.getDay(), Locale.LongFormat) + " " + anchor.getDate() + " " + L.monthName(anchor.getMonth(), Locale.LongFormat) + " " + anchor.getFullYear();
         const a = rangeStart, b = tools.addDays(rangeStart, 6);
-        return a.getMonth() === b.getMonth() ? a.getDate() + " – " + b.getDate() + " " + L.monthName(b.getMonth(), Locale.LongFormat) + " " + b.getFullYear()
-            : a.getDate() + " " + L.monthName(a.getMonth(), Locale.ShortFormat) + " – " + b.getDate() + " " + L.monthName(b.getMonth(), Locale.ShortFormat) + " " + b.getFullYear();
+        const wk = tools.prefs.weekNumbers === true ? Fili.tr("Week %1").replace("%1", tools.isoWeek(tools.addDays(a, (4 - firstDay + 7) % 7))) + " · " : "";
+        return wk + (a.getMonth() === b.getMonth() ? a.getDate() + " – " + b.getDate() + " " + L.monthName(b.getMonth(), Locale.LongFormat) + " " + b.getFullYear()
+            : a.getDate() + " " + L.monthName(a.getMonth(), Locale.ShortFormat) + " – " + b.getDate() + " " + L.monthName(b.getMonth(), Locale.ShortFormat) + " " + b.getFullYear());
     }
     function step(n) {
         anchor = viewMode === "year" ? tools.addMonths(anchor, 12 * n) : viewMode === "month" ? tools.addMonths(anchor, n) : tools.addDays(anchor, n * (viewMode === "week" ? 7 : viewMode === "list" ? 14 : 1));
@@ -235,6 +303,11 @@ ApplicationWindow {
         "undo": { on: () => !win.typing && JSON.parse(cal.undoState()).undo, run: () => { cal.undo(); soon.refresh(); } },
         "redo": { on: () => !win.typing && JSON.parse(cal.undoState()).redo, run: () => { cal.redo(); soon.refresh(); } },
         "refresh-calendars": { on: () => win.calendars.some(c => c.subscribed || c.account), run: () => { cal.syncNow(); } },
+        "copy-event": { on: () => !win.typing && win.selected !== null, run: () => win.copyEvent(win.selected) },
+        "paste-event": { on: () => !win.typing && win.clip !== null, run: () => win.pasteAt(win.anchor) },
+        "duplicate-event": { on: () => !win.typing && win.selected !== null, run: () => win.duplicateEvent(win.selected) },
+        "toggle-done": { on: () => !win.typing && win.selected !== null && win.selected.allDay && !win.selected.readonly, run: () => win.toggleDone(win.selected) },
+        "delete-event": { on: () => !win.typing && win.selected !== null && !win.selected.readonly, run: () => win.deleteEvent(win.selected, false) },
         "search": { on: () => true, run: rest => searchDialog.show(rest) },
         "select": { on: () => true, run: rest => { const ev = win.events.find(e => e.id === rest.trim()); if (ev) editor.edit(ev); } },
         "goto": { on: () => true, run: rest => { const d = tools.parse(rest); if (!isNaN(d.getTime())) win.anchor = tools.day(d); } },
@@ -287,6 +360,23 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+Q"; onActivated: win.quit() }
     Shortcut { sequence: "Ctrl+N"; enabled: !win.typing; onActivated: win.runAction("new-event") }
     Shortcut { sequence: "Ctrl+Alt+A"; enabled: !win.typing; onActivated: win.runAction("add-account") }
+    Shortcut { sequence: "Ctrl+C"; enabled: !win.typing; onActivated: win.runAction("copy-event") }
+    Shortcut { sequence: "Ctrl+V"; enabled: !win.typing; onActivated: win.runAction("paste-event") }
+    Shortcut { sequence: "Ctrl+D"; enabled: !win.typing; onActivated: win.runAction("duplicate-event") }
+    Shortcut { sequence: "Ctrl+Shift+D"; enabled: !win.typing; onActivated: win.runAction("toggle-done") }
+    Shortcut { sequence: "Delete"; enabled: !win.typing; onActivated: win.runAction("delete-event") }
+    // Plain keys: T today, 1 to 5 the views, arrows the day (Shift: a day in any view, Up and Down: a week), Enter opens the selected event or makes one
+    Shortcut { sequence: "T"; enabled: !win.typing; onActivated: win.goToday() }
+    Shortcut { sequence: "1"; enabled: !win.typing; onActivated: win.setView("day") }
+    Shortcut { sequence: "2"; enabled: !win.typing; onActivated: win.setView("week") }
+    Shortcut { sequence: "3"; enabled: !win.typing; onActivated: win.setView("month") }
+    Shortcut { sequence: "4"; enabled: !win.typing; onActivated: win.setView("year") }
+    Shortcut { sequence: "5"; enabled: !win.typing; onActivated: win.setView("list") }
+    Shortcut { sequence: "Shift+Left"; enabled: !win.typing; onActivated: win.moveDay(-1) }
+    Shortcut { sequence: "Shift+Right"; enabled: !win.typing; onActivated: win.moveDay(1) }
+    Shortcut { sequence: "Up"; enabled: !win.typing && win.viewMode === "month"; onActivated: win.moveDay(-7) }
+    Shortcut { sequence: "Down"; enabled: !win.typing && win.viewMode === "month"; onActivated: win.moveDay(7) }
+    Shortcut { sequence: "Return"; enabled: !win.typing; onActivated: win.selected ? editor.edit(win.selected) : win.newEvent() }
     Shortcut { sequence: "Ctrl+F"; onActivated: win.runAction("search") }
     Shortcut { sequence: "Ctrl+I"; enabled: !win.typing; onActivated: win.runAction("import") }
     Shortcut { sequence: "Ctrl+E"; enabled: !win.typing; onActivated: win.runAction("export") }
@@ -547,9 +637,12 @@ ApplicationWindow {
                 events: win.events
                 firstDay: win.firstDay
                 today: win.today
+                selectedKey: win.selectedKey
                 onDayClicked: d => win.anchor = d
                 onDayActivated: d => win.newEvent(d)
-                onEventClicked: ev => editor.edit(ev)
+                onEventClicked: ev => { win.select(ev); editor.edit(ev); }
+                onEventContext: (ev, x, y) => win.showContext(ev, x, y)
+                onSlotContext: (at, x, y) => win.showSlotContext(at, x, y)
                 onEventMoved: (ev, dDays, copy) => win.changeEvent(ev, dDays * 1440, dDays * 1440, copy)
                 onDaysCreated: (first, last) => editor.createDays(first, last)
             }
@@ -569,7 +662,10 @@ ApplicationWindow {
                 tools: tools
                 events: win.events
                 today: win.today
-                onEventClicked: ev => editor.edit(ev)
+                selectedKey: win.selectedKey
+                onEventClicked: ev => { win.select(ev); editor.edit(ev); }
+                onEventContext: (ev, x, y) => win.showContext(ev, x, y)
+                onDoneToggled: ev => win.toggleDone(ev)
             }
             TimeGrid {
                 anchors.fill: parent
@@ -580,8 +676,11 @@ ApplicationWindow {
                 events: win.events
                 today: win.today
                 now: win.now
+                selectedKey: win.selectedKey
                 onSlotActivated: at => win.newEvent(at)
-                onEventClicked: ev => editor.edit(ev)
+                onEventClicked: ev => { win.select(ev); editor.edit(ev); }
+                onEventContext: (ev, x, y) => win.showContext(ev, x, y)
+                onSlotContext: (at, x, y) => win.showSlotContext(at, x, y)
                 onRangeCreated: (start, end) => editor.create(start, end)
                 onEventChanged: (ev, dStart, dEnd, copy) => win.changeEvent(ev, dStart, dEnd, copy)
             }
@@ -711,6 +810,20 @@ ApplicationWindow {
             id: exportDialog
             calendars: win.calendars
             onExported: (calendar, path) => cal.exportTo(calendar, path)
+        }
+        FiliMenu {
+            id: ctxMenu
+            onActivated: id => {
+                const ev = win.ctxEvent;
+                if (id === "edit" && ev) editor.edit(ev);
+                else if (id === "duplicate" && ev) win.duplicateEvent(ev);
+                else if (id === "copy" && ev) win.copyEvent(ev);
+                else if (id === "done" && ev) win.toggleDone(ev);
+                else if (id === "delete" && ev) win.deleteEvent(ev, false);
+                else if (id === "delete-series" && ev) win.deleteEvent(ev, true);
+                else if (id === "new") win.newEvent(win.ctxDay);
+                else if (id === "paste") win.pasteAt(win.ctxDay);
+            }
         }
         FiliMenu {
             id: addMenu

@@ -41,7 +41,7 @@ fn main() {
             );
             return;
         }
-        Some("add" | "quick" | "edit" | "rm" | "show" | "list" | "next" | "tick" | "free" | "calendar" | "import" | "export" | "undo" | "redo" | "alert-wait" | "help") => {
+        Some("add" | "quick" | "edit" | "rm" | "show" | "list" | "next" | "tick" | "done" | "free" | "calendar" | "import" | "export" | "undo" | "redo" | "alert-wait" | "help") => {
             match cli::run(&args[1..]) {
                 Ok(()) => return,
                 Err(e) => {

@@ -164,6 +164,27 @@ impl Event {
     pub fn length(&self) -> Duration {
         self.end.map_or(Duration::zero(), |e| e - self.start)
     }
+    /// Marked as done (a reminder that was ticked): `STATUS:COMPLETED`, kept in the properties this program does not use
+    pub fn done(&self) -> bool {
+        self.extra.iter().any(|l| l.to_uppercase().starts_with("STATUS:") && l.to_uppercase().contains("COMPLETED"))
+    }
+    pub fn set_done(&mut self, done: bool) {
+        self.extra.retain(|l| !l.to_uppercase().starts_with("STATUS:"));
+        if done {
+            self.extra.push("STATUS:COMPLETED".into());
+        }
+    }
+    /// The files attached to the event (`ATTACH:file:///path`): their paths
+    pub fn attachments(&self) -> Vec<String> {
+        self.extra.iter().filter(|l| l.to_uppercase().starts_with("ATTACH")).filter_map(|l| l.split_once(':')).filter_map(|(_, v)| v.strip_prefix("file://")).map(percent_decode).collect()
+    }
+    /// Replaces the attached files (other ATTACH properties, such as links, stay)
+    pub fn set_attachments(&mut self, paths: &[String]) {
+        self.extra.retain(|l| !(l.to_uppercase().starts_with("ATTACH") && l.split_once(':').is_some_and(|(_, v)| v.starts_with("file://"))));
+        for p in paths.iter().filter(|p| p.starts_with('/')) {
+            self.extra.push(format!("ATTACH:file://{}", percent_encode(p)));
+        }
+    }
     /// The end of the occurrence that the views show as starting at `shown`
     pub fn end_of(&self, shown: NaiveDateTime) -> Option<NaiveDateTime> {
         self.end.map(|_| shown + self.length())
@@ -183,6 +204,25 @@ impl Event {
 }
 
 // ───── text ─────
+
+fn percent_encode(s: &str) -> String {
+    s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"/-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
+}
+
+pub fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let (mut out, mut i) = (Vec::new(), 0);
+    while i < b.len() {
+        if b[i] == b'%' && let Some(v) = s.get(i + 1..i + 3).and_then(|h| u8::from_str_radix(h, 16).ok()) {
+            out.push(v);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
 
 fn escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace(';', "\\;").replace(',', "\\,").replace('\n', "\\n")
@@ -911,6 +951,28 @@ mod tests {
         let utc = |s: &str| Utc.from_utc_datetime(&dt(s)).timestamp();
         assert_eq!(epochs, vec![utc("2026-10-24T07:00"), utc("2026-10-25T08:00"), utc("2026-10-26T08:00")]);
         assert!(to_ics(&e).contains("DTSTART;TZID=Europe/Paris:20261024T090000"));
+    }
+}
+
+#[cfg(test)]
+mod marks {
+    use super::*;
+
+    #[test]
+    fn done_and_attachments_are_kept_in_the_file_and_other_status_is_replaced() {
+        let mut e = Event { uid: "d@x".into(), summary: "Pay".into(), start: NaiveDate::from_ymd_opt(2026, 12, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(), all_day: true, extra: vec!["STATUS:CONFIRMED".into(), "ATTACH:https://example.org/a.pdf".into()], ..Event::default() };
+        assert!(!e.done());
+        e.set_done(true);
+        assert!(e.done() && !e.extra.iter().any(|l| l == "STATUS:CONFIRMED"));
+        e.set_attachments(&["/home/me/My files/b é.pdf".into(), "relative/ignored.pdf".into()]);
+        assert_eq!(e.attachments(), ["/home/me/My files/b é.pdf"]);
+        // a link stays, the file goes through the file text
+        let back = parse_ics(&to_ics(&e)).remove(0);
+        assert!(back.done() && back.extra.iter().any(|l| l.contains("example.org")));
+        assert_eq!(back.attachments(), ["/home/me/My files/b é.pdf"]);
+        e.set_done(false);
+        e.set_attachments(&[]);
+        assert!(!e.done() && e.attachments().is_empty() && e.extra.iter().any(|l| l.contains("example.org")));
     }
 }
 
