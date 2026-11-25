@@ -76,6 +76,8 @@ Item {
             readonly property int shown: dayEvents.length > room ? Math.max(0, room - 1) : dayEvents.length
             readonly property int slot: v.colList.indexOf(index % 7)
             visible: slot >= 0
+            Accessible.role: Accessible.ListItem
+            Accessible.name: Qt.locale().toString(date, "dddd d MMMM yyyy") + (dayEvents.length > 0 ? ", " + dayEvents.length : "")
             x: v.wkW + slot * v.cellW
             y: v.headH + Math.floor(index / 7) * v.cellH
             width: v.cellW

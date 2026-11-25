@@ -337,7 +337,7 @@ ApplicationWindow {
         return { ok: true };
     }
     function stateJson() {
-        return { view: viewMode, date: tools.iso(anchor), from: tools.iso(rangeStart), to: tools.iso(rangeEnd), events: events.length, title: periodTitle };
+        return { view: viewMode, date: tools.iso(anchor), from: tools.iso(rangeStart), to: tools.iso(rangeEnd), events: events.length, title: periodTitle, editing: editor.visible, importing: importDialog.visible, searching: searchDialog.visible, selected: selected ? selected.id : "", calendars: calendars.length };
     }
     Connections {
         target: Fili

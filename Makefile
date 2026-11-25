@@ -21,7 +21,7 @@ TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)
 QMAKE ?= $(firstword $(wildcard /usr/lib/qt6/bin/qmake6 /usr/lib64/qt6/bin/qmake6 /usr/lib/qt6/bin/qmake /usr/lib64/qt6/bin/qmake) $(shell command -v qmake6 qmake-qt6 2>/dev/null))
 export QMAKE
 
-.PHONY: all build dev run test install install-data uninstall
+.PHONY: all build dev run test test-window install install-data uninstall
 
 all: build
 
@@ -33,6 +33,10 @@ test:
 	python3 -I scripts/check-i18n.py
 	python3 -I scripts/check-shell-menu.py
 	python3 -I scripts/fili-api-lint --app .
+
+# Drives the window offscreen through `fili-cal ctl` (needs `make dev` first)
+test-window:
+	python3 -I scripts/test-window.py
 
 install: build install-data
 	install -Dm755 $(TARGET_DIR)/release/fili-cal $(DESTDIR)$(BINDIR)/fili-cal
