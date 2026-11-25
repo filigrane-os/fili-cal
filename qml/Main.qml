@@ -81,14 +81,24 @@ ApplicationWindow {
     // The list shows the next 60 days; the year, its twelve months
     readonly property date rangeEnd: viewMode === "year" ? new Date(anchor.getFullYear() + 1, 0, 1) : tools.addDays(rangeStart, viewMode === "month" ? 42 : viewMode === "week" ? 7 : viewMode === "list" ? 60 : 1)
     // Not onRangeStartChanged: the first evaluation of a binding would reload in the middle of another binding (a loop)
-    onAnchorChanged: Qt.callLater(reload)
-    onViewModeChanged: Qt.callLater(reload)
+    onAnchorChanged: { Qt.callLater(reload); Qt.callLater(publishContext); }
+    onViewModeChanged: { Qt.callLater(reload); Qt.callLater(publishContext); }
+    onEventsChanged: Qt.callLater(publishContext)
+    Component.onDestruction: cal.clearContext()
+    // What the window shows, for the assistant and `fili-context` (no places or notes beyond the title, place and times)
+    function publishContext() {
+        const ev = e => ({ id: e.id, title: e.title, start: e.start, end: e.end, all_day: e.allDay, place: e.place, calendar: e.calendar });
+        const sel = editor.visible && editor.eventId !== "" ? events.find(e => e.id === editor.eventId && e.occ === editor.occ) : undefined;
+        cal.publishContext(JSON.stringify({ view: viewMode, from: tools.iso(rangeStart), to: tools.iso(rangeEnd), day: tools.iso(anchor), events: events.slice(0, 60).map(ev), selected: sel ? ev(sel) : null }));
+    }
     function reload() { cal.load(tools.iso(rangeStart), tools.iso(rangeEnd)); }
     function reloadSoon() { soon.load(tools.iso(today), tools.iso(tools.addDays(today, 14))); }
     Component.onCompleted: {
         reload();
         reloadSoon();
         // handed a file or a link by the system (text/calendar, webcal:)
+        if (cal.startupGoto() !== "")
+            anchor = tools.day(tools.parse(cal.startupGoto()));
         if (cal.startupSource() !== "")
             Qt.callLater(() => importDialog.show(cal.startupSource()));
     }
@@ -226,6 +236,7 @@ ApplicationWindow {
         "redo": { on: () => !win.typing && JSON.parse(cal.undoState()).redo, run: () => { cal.redo(); soon.refresh(); } },
         "refresh-calendars": { on: () => win.calendars.some(c => c.subscribed || c.account), run: () => { cal.syncNow(); } },
         "search": { on: () => true, run: rest => searchDialog.show(rest) },
+        "select": { on: () => true, run: rest => { const ev = win.events.find(e => e.id === rest.trim()); if (ev) editor.edit(ev); } },
         "goto": { on: () => true, run: rest => { const d = tools.parse(rest); if (!isNaN(d.getTime())) win.anchor = tools.day(d); } },
         "import": { on: () => !win.typing, run: () => importDialog.show("") },
         "import-file": { on: () => true, run: rest => { importDialog.show(rest); win.raise(); } },
@@ -720,6 +731,7 @@ ApplicationWindow {
         EventEditor {
             id: editor
             tools: tools
+            onVisibleChanged: Qt.callLater(win.publishContext)
             calendars: win.calendars
             onSaved: (id, json) => win.applySaved(id, json)
             onDeleted: (id, occ, all) => win.applyDeleted(id, occ, all)

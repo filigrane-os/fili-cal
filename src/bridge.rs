@@ -153,6 +153,17 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "exportTo"]
         fn export_to(self: Pin<&mut Agenda>, calendar: &QString, path: &QString) -> bool;
+        // Tells whoever asks what the window shows (JSON: view, from, to, day, events, selected); `clearContext` on exit
+        #[qinvokable]
+        #[cxx_name = "publishContext"]
+        fn publish_context(self: &Agenda, state: &QString);
+        #[qinvokable]
+        #[cxx_name = "clearContext"]
+        fn clear_context(self: &Agenda);
+        // The day (YYYY-MM-DD) Agenda was started on by an alert's Open button, empty otherwise
+        #[qinvokable]
+        #[cxx_name = "startupGoto"]
+        fn startup_goto(self: &Agenda) -> QString;
         // The file or link Agenda was started with (a text/calendar file handed over by the system), empty otherwise
         #[qinvokable]
         #[cxx_name = "startupSource"]
@@ -643,6 +654,18 @@ impl qobject::Agenda {
                 false
             }
         }
+    }
+
+    pub fn publish_context(&self, state: &QString) {
+        crate::context::publish(&state.to_string());
+    }
+
+    pub fn clear_context(&self) {
+        crate::context::clear();
+    }
+
+    pub fn startup_goto(&self) -> QString {
+        QString::from(&std::env::var("FILI_CAL_GOTO").unwrap_or_default())
     }
 
     pub fn startup_source(&self) -> QString {

@@ -35,7 +35,12 @@ pub fn ensure_file() {
     if let Some(dir) = p.parent() {
         let _ = fs::create_dir_all(dir);
     }
-    let _ = fs::write(&p, "[agenda]\n# first_day = \"monday\"     # monday ... sunday; default: the first day of the language\n# clock = 24             # 24 or 12 hours\n# default_length = \"1h\"  # length of a new event\n# default_alert = \"10m\"  # alert of a new timed event, \"none\" for no alert\n# first_hour = 7         # the hour the day and week views scroll to when today is not shown\n");
+    let _ = fs::write(&p, "[agenda]\n# first_day = \"monday\"     # monday ... sunday; default: the first day of the language\n# clock = 24             # 24 or 12 hours\n# default_length = \"1h\"  # length of a new event\n# default_alert = \"10m\"  # alert of a new timed event, \"none\" for no alert\n# first_hour = 7         # the hour the day and week views scroll to when today is not shown\n# all_day_alert_hour = 9 # the hour the alert of a whole-day event rings\n");
+}
+
+/// The hour an alert of a whole-day event rings (default 9)
+pub fn all_day_hour() -> u32 {
+    value("all_day_alert_hour").and_then(|h| h.parse::<u32>().ok()).filter(|h| *h < 24).unwrap_or(9)
 }
 
 /// Length of a new event in seconds (default one hour)

@@ -90,10 +90,16 @@
     {
       "name": "search",
       "label": "Search…",
-      "keys": "Ctrl+F"
+      "keys": "Ctrl+F",
+      "args": "[TEXT]"
     },
     {
-      "name": "goto"
+      "name": "select",
+      "args": "ID"
+    },
+    {
+      "name": "goto",
+      "args": "DATE"
     },
     {
       "name": "import",
@@ -101,7 +107,8 @@
       "keys": "Ctrl+I"
     },
     {
-      "name": "import-file"
+      "name": "import-file",
+      "args": "PATH_OR_LINK"
     },
     {
       "name": "export",

@@ -135,6 +135,15 @@ Not done yet: P3.3 import/export from the menu and drop, P3.4 handler of `text/c
    copy of the command line in `apps/fili-cal` removed at that moment, the package `fili-apps` rebuilt, then a live test by the user
    before the single tag.
 
+## Status of 2026-11-25 (second pass)
+
+Done since P0-P3: undo/redo, settings, drag in day/week/month, calendars, subscriptions, CalDAV, import/export and handler, search (Ctrl+F),
+year and list views, alerts with Snooze 10 min / Snooze 1 hour / Open (a process of its own holds each notification), whole-day alert
+hour (`all_day_alert_hour`), one notice for the alerts missed after a suspend, `fili-event emit calendar.alert`, the context for Lia
+(`fili-context`), `goto` / `select` / `search` actions, `fili-cal free`. Still open: context menu (right click) and copy/paste of events,
+keyboard moves in the grids, week numbers, work week, "+n more" popover, reminders with a check box (P4.5), travel time (P5.3),
+Facteur and Casier links (P6.4, P6.5), tests that drive the window, accessibility pass, release 0.2.0.
+
 ## Order and size
 
 | Step | What | Size |

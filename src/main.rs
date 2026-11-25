@@ -5,6 +5,7 @@ use fili_ui as _;
 
 mod bridge;
 mod calendars;
+mod context;
 mod cli;
 mod ctl;
 mod dav;
@@ -40,7 +41,7 @@ fn main() {
             );
             return;
         }
-        Some("add" | "quick" | "edit" | "rm" | "show" | "list" | "next" | "tick" | "calendar" | "import" | "export" | "undo" | "redo" | "help") => {
+        Some("add" | "quick" | "edit" | "rm" | "show" | "list" | "next" | "tick" | "free" | "calendar" | "import" | "export" | "undo" | "redo" | "alert-wait" | "help") => {
             match cli::run(&args[1..]) {
                 Ok(()) => return,
                 Err(e) => {
@@ -101,7 +102,9 @@ fn main() {
         }
     }
     if let Some(app) = app.as_mut() {
-        std::process::exit(app.exec());
+        let code = app.exec();
+        context::clear();
+        std::process::exit(code);
     }
 }
 

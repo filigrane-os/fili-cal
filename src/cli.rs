@@ -26,12 +26,12 @@ use std::{
     env, fs,
     hash::{Hash, Hasher},
     path::PathBuf,
-    process::Command,
+    process::{Command, Stdio},
 };
 
 use chrono::{Duration, NaiveDateTime, Timelike};
 use crate::ics::{self, Event, Freq, Rule};
-use crate::{calendars, dav, exchange, subscribe, undo, when};
+use crate::{calendars, dav, exchange, i18n, subscribe, undo, when};
 use serde_json::json;
 
 /// The tests that point the store at a folder of their own take turns
@@ -363,6 +363,88 @@ fn notify(title: &str, body: &str) {
     let _ = c.arg(title).arg(body).status();
 }
 
+/// An alert with buttons: Snooze 10 min, Snooze 1 hour, Open. The notification is held by a process of its own (`alert-wait`) until
+/// it is answered or closed, so that the minute tick never waits. `FILI_CAL_NOTIFY` (tests) gets a plain notification.
+fn alert(title: &str, body: &str, id: &str, occ: NaiveDateTime) {
+    if env::var("FILI_CAL_NOTIFY").is_ok() {
+        return notify(title, body);
+    }
+    if let Ok(exe) = env::current_exe() {
+        let _ = Command::new(exe).args(["alert-wait", id, &when::to_epoch(occ).to_string(), title, body]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    }
+}
+
+/// `fili-cal alert-wait ID OCCURRENCE_EPOCH TITLE BODY`: shows the alert with its buttons and does what is chosen
+fn alert_wait(w: &[String]) -> Result<(), String> {
+    let [id, occ, title, body] = w else { return Err("alert-wait ID EPOCH TITLE BODY".into()) };
+    let out = Command::new("notify-send")
+        .args(["-a", "Agenda", "-i", "appointment-soon", "--wait", "-A"])
+        .arg(format!("snooze10={}", i18n::tr("Snooze 10 min")))
+        .arg("-A")
+        .arg(format!("snooze60={}", i18n::tr("Snooze 1 hour")))
+        .arg("-A")
+        .arg(format!("open={}", i18n::tr("Open")))
+        .arg(title)
+        .arg(body)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| e.to_string())?;
+    let occ: i64 = occ.parse().map_err(|_| "bad epoch")?;
+    match String::from_utf8_lossy(&out.stdout).trim() {
+        "snooze10" => snooze(id, occ, 600),
+        "snooze60" => snooze(id, occ, 3600),
+        // the bubble itself was clicked, or the button
+        "open" | "default" => open_on(when::from_epoch(occ)),
+        _ => {}
+    }
+    Ok(())
+}
+
+fn snooze_path() -> PathBuf {
+    state().join("fili-cal").join("snoozed")
+}
+
+/// Rings again in `secs` seconds (kept in the state folder, not in the event)
+fn snooze(id: &str, occ: i64, secs: i64) {
+    let due = when::to_epoch(when::now()) + secs;
+    let _ = fs::create_dir_all(state().join("fili-cal"));
+    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(snooze_path()) {
+        use std::io::Write;
+        let _ = writeln!(f, "{due} {id} {occ}");
+    }
+}
+
+/// Shows Agenda on the day of an event: the open window goes there, or a new one starts there
+fn open_on(day: NaiveDateTime) {
+    let date = day.format("%Y-%m-%d").to_string();
+    if let Some(pid) = crate::ctl::windows().first()
+        && crate::ctl::client(&["--pid".into(), pid.to_string(), "action".into(), "goto".into(), date.clone()]).is_ok()
+    {
+        crate::window::focus_pid(*pid);
+        return;
+    }
+    if let Ok(exe) = env::current_exe() {
+        let _ = Command::new(exe).env("FILI_CAL_GOTO", date).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    }
+}
+
+fn alert_body(ev: &Event, start: NaiveDateTime, before: i64) -> String {
+    let place = if ev.place.is_empty() { String::new() } else { format!(" · {}", ev.place) };
+    if ev.all_day {
+        start.format("%Y-%m-%d").to_string()
+    } else if before > 0 {
+        format!("{:02}:{:02}, in {} min{place}", start.hour(), start.minute(), before / 60)
+    } else {
+        format!("{:02}:{:02}{place}", start.hour(), start.minute())
+    }
+}
+
+/// Tells other tools (`fili-event watch calendar.alert`) that an alert went off; nobody has to listen
+fn emit_alert(id: &str, title: &str, start: NaiveDateTime) {
+    let data = json!({"id": id, "title": title, "start": start.format("%Y-%m-%dT%H:%M").to_string()}).to_string();
+    let _ = Command::new("fili-event").args(["emit", "calendar.alert", &data]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+}
+
 pub fn tick() -> Result<(), String> {
     // subscriptions that are due are fetched by a process of their own, so that the minute tick never waits for the network
     crate::subscribe::spawn_due();
@@ -373,6 +455,25 @@ pub fn tick() -> Result<(), String> {
     let mut fired: Vec<String> = fired_text.lines().map(str::to_string).collect();
     let (horizon, catch_up) = (Duration::days(1), Duration::hours(12));
     let mut changed = false;
+    // what rings in this tick: (id, title, body, start of the occurrence, minutes late)
+    let mut ringing: Vec<(String, String, String, NaiveDateTime, i64)> = Vec::new();
+    // snoozed alerts that are due
+    let snoozed = fs::read_to_string(snooze_path()).unwrap_or_default();
+    let now_epoch = when::to_epoch(now);
+    let mut still: Vec<&str> = Vec::new();
+    for line in snoozed.lines() {
+        let f: Vec<&str> = line.split(' ').collect();
+        let (Some(due), Some(id), Some(occ)) = (f.first().and_then(|d| d.parse::<i64>().ok()), f.get(1), f.get(2).and_then(|o| o.parse::<i64>().ok())) else { continue };
+        if due > now_epoch {
+            still.push(line);
+        } else if let Some((_, ev)) = all.iter().find(|(i, _)| i == id) {
+            let start = when::from_epoch(occ);
+            ringing.push(((*id).to_string(), ev.summary.clone(), alert_body(ev, start, 0), start, 0));
+        }
+    }
+    if still.len() != snoozed.lines().count() {
+        let _ = fs::write(snooze_path(), still.iter().map(|l| format!("{l}\n")).collect::<String>());
+    }
     for (id, ev) in &all {
         let longest = ev.alarms.iter().copied().max().unwrap_or(0).max(0);
         // an alarm that is due started between (now - catch_up) and now, for an occurrence that starts at most `longest` later
@@ -380,7 +481,7 @@ pub fn tick() -> Result<(), String> {
         for start in ics::occurrences(ev, from, now + Duration::seconds(longest) + horizon) {
             for a in &ev.alarms {
                 // the alarm of a whole day goes off at 09:00 that day
-                let base = if ev.all_day { start.date().and_hms_opt(9, 0, 0).unwrap_or(start) } else { start };
+                let base = if ev.all_day { start.date().and_hms_opt(crate::settings::all_day_hour(), 0, 0).unwrap_or(start) } else { start };
                 let at = base - Duration::seconds(*a);
                 if at > now || at < now - catch_up {
                     continue;
@@ -389,18 +490,22 @@ pub fn tick() -> Result<(), String> {
                 if fired.contains(&key) {
                     continue;
                 }
-                let body = if ev.all_day {
-                    start.format("%Y-%m-%d").to_string()
-                } else if *a > 0 {
-                    format!("{:02}:{:02}, in {} min{}", start.hour(), start.minute(), a / 60, if ev.place.is_empty() { String::new() } else { format!(" · {}", ev.place) })
-                } else {
-                    format!("{:02}:{:02}{}", start.hour(), start.minute(), if ev.place.is_empty() { String::new() } else { format!(" · {}", ev.place) })
-                };
-                notify(&ev.summary, &body);
+                ringing.push((id.clone(), ev.summary.clone(), alert_body(ev, start, *a), start, (now - at).num_minutes()));
                 fired.push(key);
                 changed = true;
             }
         }
+    }
+    // After a suspend or a shutdown many alerts can be late at once: one notice for all of them, never a storm
+    let late: Vec<&(String, String, String, NaiveDateTime, i64)> = ringing.iter().filter(|r| r.4 >= 5).collect();
+    if late.len() > 2 {
+        let titles: Vec<&str> = late.iter().take(4).map(|r| r.1.as_str()).collect();
+        notify(&i18n::trf("%1 alerts you missed", &[&late.len()]), &(titles.join(" · ") + if late.len() > 4 { " …" } else { "" }));
+        ringing.retain(|r| r.4 < 5);
+    }
+    for (id, title, body, start, _) in &ringing {
+        alert(title, body, id, *start);
+        emit_alert(id, title, *start);
     }
     // forget the old ones (their alarm is older than 3 days)
     let cutoff = when::to_epoch(now - Duration::days(3));
@@ -418,6 +523,7 @@ pub fn tick() -> Result<(), String> {
 /// One command is one step of the journal: `fili-cal undo` takes it back
 pub fn run(args: &[String]) -> Result<(), String> {
     match args.first().map(String::as_str) {
+        Some("alert-wait") => alert_wait(&args[1..])?,
         Some("undo") => println!("{}", undo::undo()?),
         Some("redo") => println!("{}", undo::redo()?),
         _ => {
@@ -526,6 +632,7 @@ fn run_command(args: &[String]) -> Result<(), String> {
             }
         }
         "tick" => tick()?,
+        "free" => free(&o, now)?,
         "calendar" => calendar_command(&o.words, o.one.get("refresh").and_then(|r| r.parse().ok()))?,
         "import" => {
             let file = o.words.first().ok_or("import needs a file or a link")?;
@@ -549,6 +656,53 @@ fn run_command(args: &[String]) -> Result<(), String> {
             println!("fili-cal add|edit|rm|show|list|next|tick|import|export|undo|redo (see the header of apps/fili-cal/src/main.rs)");
         }
         other => return Err(format!("unknown command: {other} (add, quick, edit, rm, show, list, next, tick, import, export)")),
+    }
+    Ok(())
+}
+
+/// `fili-cal free [--on WHEN] [--for 1h] [--from 09:00] [--to 18:00] [--json]`: the free slots of a day (read-only: what the
+/// assistant uses to find "a free hour on Thursday afternoon"; adding the event stays an explicit request)
+fn free(o: &Opts, now: NaiveDateTime) -> Result<(), String> {
+    let day = o.one.get("on").map(|w| when::parse_when(w, now)).transpose()?.map_or(now, |p| p.0).date();
+    let length = Duration::seconds(o.one.get("for").map_or(Ok(3600), |l| when::parse_duration(l))?);
+    let clock = |key: &str, default: (u32, u32)| -> Result<NaiveDateTime, String> {
+        let (h, m) = match o.one.get(key) {
+            Some(t) => {
+                let (h, m) = t.split_once(':').ok_or(format!("--{key} needs HH:MM"))?;
+                (h.parse().map_err(|_| format!("--{key} needs HH:MM"))?, m.parse().map_err(|_| format!("--{key} needs HH:MM"))?)
+            }
+            None => default,
+        };
+        day.and_hms_opt(h, m, 0).ok_or(format!("--{key} needs HH:MM"))
+    };
+    let (open, close) = (clock("from", (9, 0))?, clock("to", (18, 0))?);
+    let (from, to) = (day.and_hms_opt(0, 0, 0).unwrap_or(now), day.and_hms_opt(0, 0, 0).unwrap_or(now) + Duration::days(1));
+    let mut busy: Vec<(NaiveDateTime, NaiveDateTime)> = load_all()
+        .iter()
+        .filter(|(_, e)| !e.all_day)
+        .flat_map(|(_, e)| ics::occurrences(e, from, to).into_iter().map(move |s| (s, s + e.length().max(Duration::minutes(1)))))
+        .collect();
+    busy.sort();
+    let mut slots = Vec::new();
+    let mut cursor = open;
+    for (s, e) in busy {
+        if s > cursor && s.min(close) - cursor >= length {
+            slots.push((cursor, s.min(close)));
+        }
+        cursor = cursor.max(e);
+    }
+    if close > cursor && close - cursor >= length {
+        slots.push((cursor, close));
+    }
+    if o.flags.iter().any(|f| f == "json") {
+        let rows: Vec<_> = slots.iter().map(|(a, b)| json!({"start": a.format("%Y-%m-%dT%H:%M").to_string(), "end": b.format("%Y-%m-%dT%H:%M").to_string()})).collect();
+        println!("{}", json!(rows));
+    } else if slots.is_empty() {
+        println!("{}", i18n::tr("no free slot"));
+    } else {
+        for (a, b) in slots {
+            println!("{} {}-{}", day.format("%Y-%m-%d"), a.format("%H:%M"), b.format("%H:%M"));
+        }
     }
     Ok(())
 }
@@ -616,4 +770,39 @@ fn calendar_command(w: &[String], refresh: Option<u32>) -> Result<(), String> {
         other => return Err(format!("calendar: unknown command {other} (list, add, rename, color, hide, show, rm)")),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_snoozed_alert_rings_again_when_due_and_is_then_forgotten() {
+        let _turn = STORE_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let tmp = std::env::temp_dir().join(format!("fili-cal-snooze-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        // SAFETY: the tests that set the store take turns (STORE_LOCK)
+        unsafe {
+            env::set_var("XDG_DATA_HOME", tmp.join("data"));
+            env::set_var("XDG_STATE_HOME", tmp.join("state"));
+            env::set_var("FILI_CAL_NOW", "2026-12-01T09:30");
+            // notifications go to a program that does nothing
+            env::set_var("FILI_CAL_NOTIFY", "true");
+        }
+        let e = Event { uid: "s@x".into(), summary: "Call".into(), start: when::now().date().and_hms_opt(8, 0, 0).unwrap(), ..Event::default() };
+        save("s1", &e).unwrap();
+        // the change is recorded in a process-wide list: close it here so that no other test takes it
+        undo::commit("test");
+        let occ = when::to_epoch(e.start);
+        let now = when::to_epoch(when::now());
+        // one snoozed alert due a minute ago, one due in an hour
+        fs::create_dir_all(snooze_path().parent().unwrap()).unwrap();
+        fs::write(snooze_path(), format!("{} s1 {occ}\n{} s1 {occ}\n", now - 60, now + 3600)).unwrap();
+        tick().unwrap();
+        let left = fs::read_to_string(snooze_path()).unwrap();
+        assert_eq!(left.lines().count(), 1);
+        assert!(left.starts_with(&format!("{}", now + 3600)));
+        assert_eq!(alert_body(&e, e.start, 600), "08:00, in 10 min");
+        let _ = fs::remove_dir_all(&tmp);
+    }
 }

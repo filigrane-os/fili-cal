@@ -1,4 +1,10 @@
 {
+ "no free slot": "aucun créneau libre",
+ "Agenda shows the events and reminders of the user: `view` is day, week, month, year or list, `from` and `to` (excluded) the days shown, `day` the day the user is on, `events` the occurrences shown (without their notes) and `selected` the event being edited. Read and write events with `fili-cal`, not with the window.": "Agenda montre les événements et rappels de l'utilisateur : `view` est day, week, month, year ou list, `from` et `to` (exclu) les jours montrés, `day` le jour où l'utilisateur se trouve, `events` les occurrences montrées (sans leurs notes) et `selected` l'événement en cours de modification. Lire et écrire les événements avec `fili-cal`, pas avec la fenêtre.",
+ "Snooze 10 min": "Reporter de 10 min",
+ "Snooze 1 hour": "Reporter d'1 heure",
+ "Open": "Ouvrir",
+ "%1 alerts you missed": "%1 alertes manquées",
  "Search": "Rechercher",
  "Title, place or notes": "Titre, lieu ou notes",
  "No event found": "Aucun événement trouvé",
