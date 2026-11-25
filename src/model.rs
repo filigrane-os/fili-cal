@@ -31,7 +31,7 @@ fn one(id: &str, e: &Event, occ: NaiveDateTime, color: &str, readonly: bool) -> 
         "id": id, "title": e.summary, "start": occ.format(MINUTE).to_string(),
         "end": end.map(|x| x.format(MINUTE).to_string()), "allDay": e.all_day, "place": e.place, "note": e.note,
         "tz": e.tzid.clone().unwrap_or_default(),
-        "calendar": if e.calendar.is_empty() { calendars::DEFAULT } else { &e.calendar }, "color": color, "readonly": readonly, "done": e.done(), "join": e.join().map_or(String::new(), |j| j.url), "joinService": e.join().map_or("", |j| j.service), "joins": e.joins().iter().map(|j| json!({"url": j.url, "service": j.service})).collect::<Vec<_>>(), "attachments": e.attachments(), "zstart": zone_of(occ), "zend": end.map(zone_of),
+        "calendar": if e.calendar.is_empty() { calendars::DEFAULT } else { &e.calendar }, "color": color, "readonly": readonly, "done": e.done(), "join": e.join().map_or(String::new(), |j| j.url), "joinService": e.join().map_or("", |j| j.service), "joinUrls": e.join_links().iter().map(|j| j.url.clone()).collect::<Vec<_>>(), "joins": e.joins().iter().map(|j| json!({"url": j.url, "service": j.service})).collect::<Vec<_>>(), "attachments": e.attachments(), "zstart": zone_of(occ), "zend": end.map(zone_of),
         "alarms": e.alarms, "every": e.rule.as_ref().map_or("", |r| freq_word(r.freq)),
         "interval": e.rule.as_ref().map_or(1, |r| r.interval), "count": e.rule.as_ref().and_then(|r| r.count),
         "until": e.rule.as_ref().and_then(|r| r.until).map(|u| u.format(MINUTE).to_string()),

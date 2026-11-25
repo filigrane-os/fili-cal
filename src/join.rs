@@ -76,8 +76,20 @@ pub fn find(text: &str) -> Option<Join> {
 }
 
 impl Event {
-    /// Every meeting link of the event (the place, the notes, the properties), each once, the first being `join()`
+    /// The meetings of the event, one for each service (an invitation often holds two forms of the same Teams link): the first link
+    /// of the service. The first of the list is `join()`.
     pub fn joins(&self) -> Vec<Join> {
+        let mut out: Vec<Join> = Vec::new();
+        for j in self.join_links() {
+            if !out.iter().any(|o| o.service == j.service) {
+                out.push(j);
+            }
+        }
+        out
+    }
+
+    /// Every meeting link of the event (the place, the notes, the properties), each once
+    pub fn join_links(&self) -> Vec<Join> {
         let mut out = find_all(&self.place);
         let rest = std::iter::once(self.note.clone()).chain(self.extra.iter().filter(|l| ["URL", "X-GOOGLE-CONFERENCE", "X-MICROSOFT-SKYPETEAMSMEETINGURL", "CONFERENCE"].iter().any(|p| l.to_uppercase().starts_with(p))).filter_map(|l| l.split_once(':').map(|(_, v)| v.to_string())));
         for text in rest {
@@ -129,6 +141,9 @@ mod tests {
         let e = Event { note: note.into(), ..Event::default() };
         let all = e.joins();
         assert_eq!(all.iter().map(|j| j.service).collect::<Vec<_>>(), ["Teams", "Meet"]);
+        // two forms of the same Teams link are one meeting for the buttons, two links for what is taken out of the notes
+        let two = Event { note: "https://teams.microsoft.com/meet/123?p=abc and https://teams.microsoft.com/l/meetup-join/19%3ameeting_x/0".into(), ..Event::default() };
+        assert_eq!((two.joins().len(), two.join_links().len()), (1, 2));
         assert_eq!(e.join().map(|j| j.service), Some("Teams"));
         // the same link twice is one button
         let twice = Event { place: "https://meet.google.com/aaa-bbbb-ccc".into(), note: "https://meet.google.com/aaa-bbbb-ccc".into(), ..Event::default() };

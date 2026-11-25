@@ -23,6 +23,8 @@ FiliDialog {
     property string joinService: ""
     // Every meeting link of the event: [{url, service}] (a button each on the card)
     property var joins: []
+    // All the meeting links of the event (taken out of the notes shown)
+    property var joinUrls: []
     signal joinRequested(string url)
     // The calendars [{slug, name, color, hidden}] and the one the event is in
     property var calendars: []
@@ -93,6 +95,7 @@ FiliDialog {
         join = ev.join || "";
         joinService = ev.joinService || "";
         joins = ev.joins || [];
+        joinUrls = ev.joinUrls || [];
         first = ev.zfirst;
         occZ = ev.zstart;
         series = ev.series;
@@ -130,6 +133,7 @@ FiliDialog {
         join = "";
         joinService = "";
         joins = [];
+        joinUrls = [];
         calendar = (calendars.find(c => !c.hidden && !c.subscribed) || { slug: "personal" }).slug;
         custom = false;
         rrule = "";
@@ -236,14 +240,17 @@ FiliDialog {
         // the meeting links are the buttons above: a line that only said "Join:" before its link goes with it
         const lines = noteField.text.split("\n").map(l => {
             let t = l;
-            for (const j of joins)
-                t = t.split("<" + j.url + ">").join("").split(j.url).join("");
+            for (const u of joinUrls)
+                t = t.split("<" + u + ">").join("").split(u).join("");
             return t !== l && (t.trim() === "" || /^[^:]{0,24}:\s*$/.test(t.trim())) ? null : t;
         });
-        return lines.filter(l => l !== null).join("\n").trim();
+        // the long rules of an invitation (_____) are not shown; empty lines come once
+        return lines.filter(l => l !== null && !/^\s*[_=*-]{6,}\s*$/.test(l)).join("\n").replace(/\n{3,}/g, "\n\n").trim();
     }
     // A text as the card shows it: the links can be clicked, the rest is text (a link is shortened on screen, not in what it opens)
     function linked(text) {
+        // a link between < > is a link: the brackets of a mail are not shown
+        text = text.replace(/(\S)<(https?:\/\/[^\s<>"']+)>/g, "$1 $2").replace(/<(https?:\/\/[^\s<>"']+)>/g, "$1");
         const esc = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r?\n/g, "<br>");
         const re = /https?:\/\/[^\s<>"']+/g;
         let out = "", last = 0, m;
@@ -316,7 +323,7 @@ FiliDialog {
         Flickable {
             visible: ed.notesShown !== ""
             width: parent.width
-            height: Math.min(noteText.implicitHeight, 150)
+            height: Math.min(noteText.implicitHeight, 230)
             contentHeight: noteText.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
