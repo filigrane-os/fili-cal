@@ -108,12 +108,60 @@ impl Event {
     }
 }
 
-/// Opens a link with the program of the user (the browser, or the application of the service)
+/// Opens a link with the program of the user (the browser, or the application of the service), then brings that browser to the
+/// front: a program that is told to open a link cannot take the focus by itself on Wayland. It waits up to two seconds for that
+/// (the callers that must not wait run it in a thread).
 pub fn open(url: &str) -> Result<(), String> {
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return Err(crate::i18n::tr("not a link").to_string());
     }
-    std::process::Command::new("xdg-open").arg(url).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().map(|_| ()).map_err(|e| e.to_string())
+    std::process::Command::new("xdg-open").arg(url).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn().map_err(|e| e.to_string())?;
+    focus_browser();
+    Ok(())
+}
+
+/// The application id of the default browser ("google-chrome" for `google-chrome.desktop`)
+fn browser_app_id() -> Option<String> {
+    let out = std::process::Command::new("xdg-mime").args(["query", "default", "x-scheme-handler/https"]).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output().ok()?;
+    let id = String::from_utf8_lossy(&out.stdout).trim().trim_end_matches(".desktop").to_lowercase();
+    if id.is_empty() { None } else { Some(id) }
+}
+
+/// Does a window of this application id belong to the browser of this desktop id (`org.mozilla.firefox` and `firefox`)
+fn same_app(window: &str, browser: &str) -> bool {
+    let w = window.to_lowercase();
+    w == browser || browser.ends_with(&format!(".{w}")) || w.ends_with(&format!(".{browser}"))
+}
+
+/// The window to bring to the front among niri's: (id, focused) of the browser window that was last in front
+fn browser_window(windows: &serde_json::Value, browser: &str) -> Option<(u64, bool)> {
+    windows
+        .as_array()?
+        .iter()
+        .filter(|w| w["app_id"].as_str().is_some_and(|a| same_app(a, browser)))
+        .max_by_key(|w| (w["focus_timestamp"]["secs"].as_u64().unwrap_or(0), w["focus_timestamp"]["nanos"].as_u64().unwrap_or(0)))
+        .and_then(|w| Some((w["id"].as_u64()?, w["is_focused"].as_bool().unwrap_or(false))))
+}
+
+/// Brings the browser to the front with niri (nothing happens elsewhere): the window that was last in front, once the browser has had
+/// the time to take the link, and again if it is not in front a moment later
+fn focus_browser() {
+    if std::env::var_os("NIRI_SOCKET").is_none() {
+        return;
+    }
+    let Some(browser) = browser_app_id() else { return };
+    for wait in [600u64, 900] {
+        std::thread::sleep(std::time::Duration::from_millis(wait));
+        let Ok(out) = std::process::Command::new("niri").args(["msg", "--json", "windows"]).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output() else { return };
+        let windows: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or(serde_json::Value::Null);
+        match browser_window(&windows, &browser) {
+            Some((_, true)) => return,
+            Some((id, false)) => {
+                let _ = std::process::Command::new("niri").args(["msg", "action", "focus-window", "--id", &id.to_string()]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+            }
+            None => return,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -148,6 +196,19 @@ mod tests {
         // the same link twice is one button
         let twice = Event { place: "https://meet.google.com/aaa-bbbb-ccc".into(), note: "https://meet.google.com/aaa-bbbb-ccc".into(), ..Event::default() };
         assert_eq!(twice.joins().len(), 1);
+    }
+
+    #[test]
+    fn the_browser_window_that_was_last_in_front_is_the_one_to_focus() {
+        let w = serde_json::json!([
+            {"id": 17, "app_id": "google-chrome", "is_focused": false, "focus_timestamp": {"secs": 21642, "nanos": 7}},
+            {"id": 44, "app_id": "google-chrome", "is_focused": false, "focus_timestamp": {"secs": 22511, "nanos": 2}},
+            {"id": 16, "app_id": "fili-term", "is_focused": true, "focus_timestamp": {"secs": 22600, "nanos": 0}}
+        ]);
+        assert_eq!(browser_window(&w, "google-chrome"), Some((44, false)));
+        assert_eq!(browser_window(&w, "firefox"), None);
+        // the desktop id of a flatpak-style browser and the application id of its windows
+        assert!(same_app("firefox", "org.mozilla.firefox") && same_app("Google-Chrome", "google-chrome") && !same_app("fili-term", "google-chrome"));
     }
 
     #[test]

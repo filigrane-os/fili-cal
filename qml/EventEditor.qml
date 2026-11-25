@@ -43,11 +43,12 @@ FiliDialog {
     // Duration kept when the start moves: the end is "start + length" until the user types one
     property bool allDay: false
 
-    title: isNew ? Fili.tr("New event") : Fili.tr("Event")
-    confirmLabel: viewing ? Fili.tr("Edit") : Fili.tr("Save")
-    cancelLabel: viewing ? Fili.tr("Close") : ""
+    // On the card the title and the cross are drawn below, and so are the buttons (Join before Edit, no Edit on an event that cannot change)
+    title: viewing ? "" : isNew ? Fili.tr("New event") : Fili.tr("Event")
+    showButtons: !viewing
+    confirmLabel: Fili.tr("Save")
     cardWidth: 460
-    confirmEnabled: viewing ? !readOnly : !readOnly && titleField.text.trim() !== "" && startOk && endOk && lastOk && zoneOk
+    confirmEnabled: !readOnly && titleField.text.trim() !== "" && startOk && endOk && lastOk && zoneOk
     readonly property bool dateOk: /^\d{4}-\d{2}-\d{2}$/.test(dateField.text) && !isNaN(tools.parse(dateField.text).getTime())
     readonly property bool timeOk: /^([01]\d|2[0-3]):[0-5]\d$/.test(startField.text)
     readonly property bool startOk: dateOk && (allDay || timeOk)
@@ -169,13 +170,6 @@ FiliDialog {
         lastField.text = tools.iso(last);
     }
     onAccepted: {
-        // On the view, the main button is Edit: the dialog stays, on the form
-        if (viewing) {
-            editing = true;
-            open();
-            titleField.focusField();
-            return;
-        }
         // A series keeps its own first day: it moves by the days this occurrence was moved
         let day = dateField.text;
         if (series && first !== "") {
@@ -269,6 +263,26 @@ FiliDialog {
         visible: ed.viewing
         width: parent.width
         spacing: FiliTheme.space2
+        // The header: what this is, and the cross that closes it
+        Item {
+            width: parent.width
+            height: 22
+            Text {
+                anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+                text: Fili.tr("Event")
+                font.family: FiliTheme.font
+                font.pixelSize: FiliTheme.size
+                font.weight: FiliTheme.weightAccent
+                color: FiliTheme.text
+            }
+            FiliIconButton {
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                name: "x"
+                iconSize: 14
+                tip: Fili.tr("Close")
+                onClicked: ed.close()
+            }
+        }
         Text {
             width: parent.width
             wrapMode: Text.WordWrap
@@ -295,16 +309,6 @@ FiliDialog {
             font.family: FiliTheme.font
             font.pixelSize: FiliTheme.sizeSmall
             color: FiliTheme.muted
-        }
-        // A button for each video meeting of the event (the links are taken out of the notes)
-        Flow {
-            visible: ed.joins.length > 0
-            width: parent.width
-            spacing: FiliTheme.space2
-            Repeater {
-                model: ed.joins
-                JoinButton { required property var modelData; tools: ed.tools; url: modelData.url; service: modelData.service; labelled: true; onClicked: ed.joinRequested(modelData.url) }
-            }
         }
         Text {
             visible: placeField.text !== "" && !ed.joins.some(j => j.url === placeField.text.trim())
@@ -368,6 +372,21 @@ FiliDialog {
             font.family: FiliTheme.font
             font.pixelSize: FiliTheme.sizeSmall
             color: FiliTheme.muted
+        }
+        // The meetings to join (a button for each service), then Edit when the event can change
+        Row {
+            anchors.right: parent.right
+            spacing: FiliTheme.space2
+            Repeater {
+                model: ed.joins
+                FiliButton { required property var modelData; label: Fili.tr("Join %1").replace("%1", modelData.service); primary: true; onClicked: ed.joinRequested(modelData.url) }
+            }
+            FiliButton {
+                visible: !ed.readOnly
+                label: Fili.tr("Edit")
+                primary: ed.joins.length === 0
+                onClicked: { ed.editing = true; titleField.focusField(); }
+            }
         }
     }
     FiliTextField { visible: !ed.viewing; id: titleField; width: parent.width; placeholder: Fili.tr("Title"); onAccepted: ed.accept() }

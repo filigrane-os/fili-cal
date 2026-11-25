@@ -21,6 +21,7 @@ Agenda becomes a calendar you can live in.
 - The notes are a text field of several lines; on the card their links can be clicked, and every video meeting link (Teams, Meet, Zoom…)
   is taken out of them into a Join button (the options page of an invitation is not taken for the meeting).
 - As many alerts as wanted for an event (a line each in the editor, usual choices or the ones of the file, "Add an alert").
+- Joining opens the link in the browser and brings the browser to the front (niri).
 - An event opens as a card to read (title, when, repeat, alert, the Join button, place, notes, attachments); the Edit button switches to the form.
 - Video meetings: the link of Teams, Meet, Zoom, Webex… found in the place, notes or properties gives a Join button (week, month, list, editor,
   sidebar, right-click menu, Ctrl+J), a Join button in the alert (a click on the bubble joins) and `fili-cal join`.

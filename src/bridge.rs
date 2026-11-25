@@ -654,19 +654,25 @@ impl qobject::Agenda {
     }
 
     pub fn join_url(mut self: Pin<&mut Self>, url: &QString) -> bool {
-        match crate::join::open(&url.to_string()) {
-            Ok(()) => true,
-            Err(e) => {
-                self.as_mut().fail(e);
-                false
-            }
+        // opening, then bringing the browser to the front, takes a moment: not in the thread of the window
+        let url = url.to_string();
+        if !(url.starts_with("https://") || url.starts_with("http://")) {
+            self.as_mut().fail(i18n::tr("not a link").to_string());
+            return false;
         }
+        std::thread::spawn(move || {
+            let _ = crate::join::open(&url);
+        });
+        true
     }
 
     pub fn join_now(mut self: Pin<&mut Self>) -> bool {
         match cli::meeting_now(&cli::load_all(), crate::when::now()) {
             Some((_, title, j, _)) => {
-                let _ = crate::join::open(&j.url);
+                let url = j.url.clone();
+                std::thread::spawn(move || {
+                    let _ = crate::join::open(&url);
+                });
                 self.as_mut().rust_mut().message = QString::from(&i18n::trf("Joining %1 (%2)", &[&title, &j.service]));
                 self.as_mut().rust_mut().failed = false;
                 self.as_mut().changed();
