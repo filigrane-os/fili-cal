@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Agenda
+GenericName=Calendar
+GenericName[fr]=Calendrier
+Comment=Your calendar and your reminders, in one list
+Comment[fr]=Votre calendrier et vos rappels, dans une seule liste
+Exec=fili-cal
+Icon=fili-cal
+Keywords=agenda;calendar;calendrier;reminder;rappel;event;événement;alarm;alarme;ical;
+Categories=Office;Calendar;
+Terminal=false
+StartupWMClass=fili-cal

@@ -1,0 +1,108 @@
+{
+  "v": 1,
+  "app_id": "fili-cal",
+  "name": "Agenda",
+  "program": "fili-cal",
+  "ctl": "fili-cal ctl --pid %pid",
+  "commands": [
+    {
+      "verb": "action",
+      "args": "NAME [ARG]",
+      "summary": "Run a command of the window (the same names as its menu, plus a few for the bar panel)",
+      "reads": false
+    },
+    {
+      "verb": "state",
+      "summary": "JSON of the state of the window",
+      "reads": true
+    },
+    {
+      "verb": "actions",
+      "summary": "JSON list of the action names",
+      "reads": true
+    }
+  ],
+  "actions": [
+    {
+      "name": "about",
+      "label": "About Agenda"
+    },
+    {
+      "name": "view-day",
+      "label": "Day",
+      "keys": "Ctrl+1"
+    },
+    {
+      "name": "view-week",
+      "label": "Week",
+      "keys": "Ctrl+2"
+    },
+    {
+      "name": "view-month",
+      "label": "Month",
+      "keys": "Ctrl+3"
+    },
+    {
+      "name": "today",
+      "label": "Today",
+      "keys": "Ctrl+T"
+    },
+    {
+      "name": "previous",
+      "label": "Previous",
+      "keys": "Left"
+    },
+    {
+      "name": "next",
+      "label": "Next",
+      "keys": "Right"
+    },
+    {
+      "name": "new-event",
+      "label": "New Event…",
+      "keys": "Ctrl+N"
+    },
+    {
+      "name": "quick-add",
+      "label": "Quick Add…",
+      "keys": "Ctrl+Shift+N"
+    },
+    {
+      "name": "settings",
+      "label": "Settings…"
+    },
+    {
+      "name": "toggle-header",
+      "label": "Show Header"
+    },
+    {
+      "name": "toggle-footer",
+      "label": "Show Status Bar"
+    },
+    {
+      "name": "attention"
+    },
+    {
+      "name": "attention-clear"
+    },
+    {
+      "name": "debug",
+      "label": "Debug Logs",
+      "keys": "Ctrl+Shift+L"
+    },
+    {
+      "name": "toggle-window-buttons",
+      "label": "Show Window Buttons"
+    },
+    {
+      "name": "window-actions",
+      "label": "Window Actions…",
+      "keys": "Ctrl+Shift+W"
+    },
+    {
+      "name": "close",
+      "label": "Close",
+      "keys": "Ctrl+W"
+    }
+  ]
+}
