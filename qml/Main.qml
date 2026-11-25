@@ -27,6 +27,8 @@ ApplicationWindow {
     Agenda { id: cal }
     // What comes next (sidebar): a second object, its own range
     Agenda { id: soon }
+    // (the same object, for a component that has a property called tools itself)
+    readonly property var dateTools: tools
     DateTools { id: tools; prefs: JSON.parse(cal.settings()); accents: JSON.parse(Fili.themeJson()).accents; light: Fili.light }
 
     // ---- State ---------------------------------------------------------------------------------------------------
@@ -118,6 +120,7 @@ ApplicationWindow {
         ctxEvent = ev;
         const o = ctxMenu.parent.mapToItem(null, 0, 0);
         ctxMenu.open(x - o.x, y - o.y, [
+            ...(ev.join ? [{ id: "join", label: Fili.tr("Join %1").replace("%1", ev.joinService || ""), hint: "Ctrl+J" }] : []),
             { id: "edit", label: ev.readonly ? Fili.tr("Open") : Fili.tr("Edit…") },
             { id: "duplicate", label: Fili.tr("Duplicate") },
             { id: "copy", label: Fili.tr("Copy"), hint: "Ctrl+C" },
@@ -324,6 +327,7 @@ ApplicationWindow {
         "undo": { on: () => !win.typing && JSON.parse(cal.undoState()).undo, run: () => { cal.undo(); soon.refresh(); } },
         "redo": { on: () => !win.typing && JSON.parse(cal.undoState()).redo, run: () => { cal.redo(); soon.refresh(); } },
         "refresh-calendars": { on: () => win.calendars.some(c => c.subscribed || c.account), run: () => { cal.syncNow(); } },
+        "join": { on: () => true, run: () => { if (win.selected && win.selected.join) cal.joinUrl(win.selected.join); else cal.joinNow(); } },
         "next-event": { on: () => !win.typing, run: () => win.selectStep(1) },
         "previous-event": { on: () => !win.typing, run: () => win.selectStep(-1) },
         "move-earlier": { on: () => !win.typing && win.selected !== null && !win.selected.allDay, run: () => win.moveSelected(-15, -15) },
@@ -389,6 +393,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+Q"; onActivated: win.quit() }
     Shortcut { sequence: "Ctrl+N"; enabled: !win.typing; onActivated: win.runAction("new-event") }
     Shortcut { sequence: "Ctrl+Alt+A"; enabled: !win.typing; onActivated: win.runAction("add-account") }
+    Shortcut { sequence: "Ctrl+J"; onActivated: win.runAction("join") }
     Shortcut { sequence: "Tab"; enabled: !win.typing; onActivated: win.runAction("next-event") }
     Shortcut { sequence: "Shift+Tab"; enabled: !win.typing; onActivated: win.runAction("previous-event") }
     Shortcut { sequence: "Alt+Up"; enabled: !win.typing; onActivated: win.runAction("move-earlier") }
@@ -646,6 +651,15 @@ ApplicationWindow {
                             Text { width: parent.width; text: soonRow.modelData.title; elide: Text.ElideRight; font.family: FiliTheme.font; font.pixelSize: FiliTheme.sizeList; color: FiliTheme.text }
                             Text { width: parent.width; text: win.whenText(soonRow.modelData) + (soonRow.modelData.place ? " · " + soonRow.modelData.place : ""); elide: Text.ElideRight; font.family: FiliTheme.font; font.pixelSize: FiliTheme.sizeSmall; color: FiliTheme.muted }
                         }
+                        JoinButton {
+                            tools: win.dateTools
+                            url: soonRow.modelData.join || ""
+                            service: soonRow.modelData.joinService || ""
+                            tone: win.dateTools.colorOf(soonRow.modelData)
+                            anchors { right: parent.right; rightMargin: FiliTheme.space3; verticalCenter: parent.verticalCenter }
+                            z: 5
+                            onClicked: cal.joinUrl(soonRow.modelData.join)
+                        }
                         MouseArea { id: soonArea; anchors.fill: parent; hoverEnabled: true; onClicked: win.anchor = tools.day(tools.start(soonRow.modelData)) }
                         Accessible.role: Accessible.Button
                         Accessible.name: soonRow.modelData.title
@@ -682,6 +696,7 @@ ApplicationWindow {
                 onSlotContext: (at, x, y) => win.showSlotContext(at, x, y)
                 onEventMoved: (ev, dDays, copy) => win.changeEvent(ev, dDays * 1440, dDays * 1440, copy)
                 onDaysCreated: (first, last) => editor.createDays(first, last)
+                onJoinRequested: ev => cal.joinUrl(ev.join)
             }
             YearView {
                 anchors.fill: parent
@@ -703,6 +718,7 @@ ApplicationWindow {
                 onEventClicked: ev => { win.select(ev); editor.edit(ev); }
                 onEventContext: (ev, x, y) => win.showContext(ev, x, y)
                 onDoneToggled: ev => win.toggleDone(ev)
+                onJoinRequested: ev => cal.joinUrl(ev.join)
             }
             TimeGrid {
                 anchors.fill: parent
@@ -718,6 +734,7 @@ ApplicationWindow {
                 onEventClicked: ev => { win.select(ev); editor.edit(ev); }
                 onEventContext: (ev, x, y) => win.showContext(ev, x, y)
                 onSlotContext: (at, x, y) => win.showSlotContext(at, x, y)
+                onJoinRequested: ev => cal.joinUrl(ev.join)
                 onRangeCreated: (start, end) => editor.create(start, end)
                 onEventChanged: (ev, dStart, dEnd, copy) => win.changeEvent(ev, dStart, dEnd, copy)
             }
@@ -853,7 +870,8 @@ ApplicationWindow {
             id: ctxMenu
             onActivated: id => {
                 const ev = win.ctxEvent;
-                if (id === "edit" && ev) editor.edit(ev);
+                if (id === "join" && ev) cal.joinUrl(ev.join);
+                else if (id === "edit" && ev) editor.edit(ev);
                 else if (id === "duplicate" && ev) win.duplicateEvent(ev);
                 else if (id === "copy" && ev) win.copyEvent(ev);
                 else if (id === "done" && ev) win.toggleDone(ev);
@@ -883,6 +901,7 @@ ApplicationWindow {
             id: editor
             tools: tools
             onVisibleChanged: Qt.callLater(win.publishContext)
+            onJoinRequested: url => cal.joinUrl(url)
             calendars: win.calendars
             onSaved: (id, json) => win.applySaved(id, json)
             onDeleted: (id, occ, all) => win.applyDeleted(id, occ, all)

@@ -18,6 +18,10 @@ FiliDialog {
     // Files attached to the event (paths): a file dropped on the card is added; the owner of the file is Casier, not Agenda
     property var attachments: []
     property bool done: false
+    // The meeting link of the event (found in the place or the notes), and its service
+    property string join: ""
+    property string joinService: ""
+    signal joinRequested(string url)
     // The calendars [{slug, name, color, hidden}] and the one the event is in
     property var calendars: []
     property string calendar: "personal"
@@ -63,6 +67,8 @@ FiliDialog {
         readOnly = ev.readonly === true;
         attachments = ev.attachments || [];
         done = ev.done === true;
+        join = ev.join || "";
+        joinService = ev.joinService || "";
         first = ev.zfirst;
         occZ = ev.zstart;
         series = ev.series;
@@ -96,6 +102,8 @@ FiliDialog {
         readOnly = false;
         attachments = [];
         done = false;
+        join = "";
+        joinService = "";
         calendar = (calendars.find(c => !c.hidden && !c.subscribed) || { slug: "personal" }).slug;
         custom = false;
         rrule = "";
@@ -237,6 +245,11 @@ FiliDialog {
         visible: ed.allDay && !ed.isNew
         label: Fili.tr("Status")
         FiliCheckBox { checked: ed.done; label: Fili.tr("Done"); onToggled: ed.done = !ed.done }
+    }
+    Row2 {
+        visible: ed.join !== ""
+        label: Fili.tr("Meeting")
+        JoinButton { tools: ed.tools; url: ed.join; service: ed.joinService; labelled: true; onClicked: ed.joinRequested(ed.join) }
     }
     Row2 {
         label: Fili.tr("Place")

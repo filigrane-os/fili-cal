@@ -28,6 +28,7 @@ fn main() {
                 "qml/EventEditor.qml",
                 "qml/ExportDialog.qml",
                 "qml/ImportDialog.qml",
+                "qml/JoinButton.qml",
             ])
             .depend("Fili.UI")
             .depend("QtQuick")

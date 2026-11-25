@@ -29,6 +29,8 @@ Item {
     signal rangeCreated(date start, date end)
     // A right click on an event, or on an empty hour (window coordinates)
     signal eventContext(var ev, real x, real y)
+    // The camera of an event with a meeting link was pressed
+    signal joinRequested(var ev)
     signal slotContext(date at, real x, real y)
     // A block moved or resized: the minutes to add to its start and to its end (a day is 1440), and whether it is a copy
     signal eventChanged(var ev, int dStart, int dEnd, bool copy)
@@ -247,6 +249,16 @@ Item {
                                 font.pixelSize: FiliTheme.sizeSmall
                                 color: FiliTheme.textSecondary
                             }
+                        }
+                        JoinButton {
+                            tools: v.tools
+                            url: blk.modelData.ev.join || ""
+                            service: blk.modelData.ev.joinService || ""
+                            tone: v.tools.colorOf(blk.modelData.ev)
+                            visible: url !== "" && blk.height >= 30
+                            anchors { right: parent.right; top: parent.top; margins: 3 }
+                            z: 5
+                            onClicked: v.joinRequested(blk.modelData.ev)
                         }
                         MouseArea {
                             id: blkArea

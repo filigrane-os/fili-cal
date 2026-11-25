@@ -149,6 +149,14 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "importSource"]
         fn import_source(self: Pin<&mut Agenda>, source: &QString, calendar: &QString) -> bool;
+        // Opens a meeting link (https only)
+        #[qinvokable]
+        #[cxx_name = "joinUrl"]
+        fn join_url(self: Pin<&mut Agenda>, url: &QString) -> bool;
+        // Joins the meeting that is on now or starts within half an hour; false (with a message) when there is none
+        #[qinvokable]
+        #[cxx_name = "joinNow"]
+        fn join_now(self: Pin<&mut Agenda>) -> bool;
         // Answers an invitation (answer: accept, maybe, decline): the event is kept in the calendar (slug) when accepted or tentative and
         // the reply is sent to the organizer by Facteur; false when it failed (see message)
         #[qinvokable]
@@ -640,6 +648,32 @@ impl qobject::Agenda {
             }
             Err(e) => {
                 self.as_mut().fail(e);
+                false
+            }
+        }
+    }
+
+    pub fn join_url(mut self: Pin<&mut Self>, url: &QString) -> bool {
+        match crate::join::open(&url.to_string()) {
+            Ok(()) => true,
+            Err(e) => {
+                self.as_mut().fail(e);
+                false
+            }
+        }
+    }
+
+    pub fn join_now(mut self: Pin<&mut Self>) -> bool {
+        match cli::meeting_now(&cli::load_all(), crate::when::now()) {
+            Some((_, title, j, _)) => {
+                let _ = crate::join::open(&j.url);
+                self.as_mut().rust_mut().message = QString::from(&i18n::trf("Joining %1 (%2)", &[&title, &j.service]));
+                self.as_mut().rust_mut().failed = false;
+                self.as_mut().changed();
+                true
+            }
+            None => {
+                self.as_mut().fail(i18n::tr("no meeting with a link right now").to_string());
                 false
             }
         }

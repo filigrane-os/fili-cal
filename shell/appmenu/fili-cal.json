@@ -85,6 +85,14 @@
    "label": "Edit",
    "children": [
     {
+     "label": "Join Meeting",
+     "exec": "fili-cal ctl --pid %pid action join",
+     "keys": "Ctrl+J"
+    },
+    {
+     "sep": true
+    },
+    {
      "label": "Undo",
      "exec": "fili-cal ctl --pid %pid action undo",
      "keys": "Ctrl+Z"

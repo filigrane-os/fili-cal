@@ -88,6 +88,11 @@
       "keys": "Ctrl+R"
     },
     {
+      "name": "join",
+      "label": "Join Meeting",
+      "keys": "Ctrl+J"
+    },
+    {
       "name": "next-event",
       "label": "Select Next Event",
       "keys": "Tab"

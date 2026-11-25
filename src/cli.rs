@@ -211,7 +211,7 @@ fn parse_opts(args: &[String]) -> Result<Opts, String> {
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.strip_prefix("--") {
-            Some(name @ ("reminder" | "tsv" | "json" | "undo" | "dry-run")) => o.flags.push(name.to_string()),
+            Some(name @ ("reminder" | "tsv" | "json" | "undo" | "dry-run" | "print")) => o.flags.push(name.to_string()),
             Some("alarm") => o.alarms.push(it.next().ok_or("--alarm needs a duration")?.clone()),
             Some(name @ ("at" | "end" | "for" | "place" | "note" | "every" | "interval" | "count" | "until" | "title" | "on" | "from" | "to" | "days" | "calendar" | "refresh" | "file")) => {
                 o.one.insert(name.to_string(), it.next().ok_or(format!("--{name} needs a value"))?.clone());
@@ -318,7 +318,7 @@ fn print_occ(v: &[Occ], mode: &str) {
                 let end = o.ev.end_of(o.start);
                 json!({"v": 1, "id": o.id, "title": o.ev.summary, "start": o.start.format("%Y-%m-%dT%H:%M:%S").to_string(),
                     "end": end.map(|e| e.format("%Y-%m-%dT%H:%M:%S").to_string()), "all_day": o.ev.all_day, "place": o.ev.place,
-                    "note": o.ev.note, "alarms": o.ev.alarms, "every": o.ev.rule.as_ref().map(|r| r.freq.name()), "tz": o.ev.tzid, "calendar": if o.ev.calendar.is_empty() { calendars::DEFAULT } else { &o.ev.calendar }})
+                    "note": o.ev.note, "alarms": o.ev.alarms, "every": o.ev.rule.as_ref().map(|r| r.freq.name()), "tz": o.ev.tzid, "join": o.ev.join().map(|j| j.url), "calendar": if o.ev.calendar.is_empty() { calendars::DEFAULT } else { &o.ev.calendar }})
             })
             .collect();
         println!("{}", json!(rows));
@@ -344,7 +344,7 @@ fn write_agenda(all: &[(String, Event)], now: NaiveDateTime) {
         .iter()
         .filter(|o| !o.ev.all_day)
         .take(20)
-        .map(|o| format!("{}\t{}\t{}\n", when::to_epoch(o.start), o.ev.summary.replace(['\t', '\n'], " "), o.ev.place.replace(['\t', '\n'], " ")))
+        .map(|o| format!("{}\t{}\t{}\t{}\n", when::to_epoch(o.start), o.ev.summary.replace(['\t', '\n'], " "), o.ev.place.replace(['\t', '\n'], " "), o.ev.join().map_or(String::new(), |j| j.url)))
         .collect();
     let dir = state();
     let _ = fs::create_dir_all(&dir);
@@ -365,23 +365,39 @@ fn notify(title: &str, body: &str) {
 
 /// An alert with buttons: Snooze 10 min, Snooze 1 hour, Open. The notification is held by a process of its own (`alert-wait`) until
 /// it is answered or closed, so that the minute tick never waits. `FILI_CAL_NOTIFY` (tests) gets a plain notification.
-fn alert(title: &str, body: &str, id: &str, occ: NaiveDateTime) {
+fn alert(title: &str, body: &str, id: &str, occ: NaiveDateTime, join: Option<&crate::join::Join>) {
     if env::var("FILI_CAL_NOTIFY").is_ok() {
         return notify(title, body);
     }
     if let Ok(exe) = env::current_exe() {
-        let _ = Command::new(exe).args(["alert-wait", id, &when::to_epoch(occ).to_string(), title, body]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+        let mut c = Command::new(exe);
+        c.args(["alert-wait", id, &when::to_epoch(occ).to_string(), title, body]);
+        if let Some(j) = join {
+            c.args([j.url.as_str(), j.service]);
+        }
+        let _ = c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
     }
 }
 
-/// `fili-cal alert-wait ID OCCURRENCE_EPOCH TITLE BODY`: shows the alert with its buttons and does what is chosen
+/// `fili-cal alert-wait ID OCCURRENCE_EPOCH TITLE BODY [LINK SERVICE]`: shows the alert with its buttons and does what is chosen. A
+/// meeting with a link gets "Join" instead of the hour of snooze, and a click on the bubble joins it.
 fn alert_wait(w: &[String]) -> Result<(), String> {
-    let [id, occ, title, body] = w else { return Err("alert-wait ID EPOCH TITLE BODY".into()) };
-    let out = Command::new("notify-send")
-        .args(["-a", "Agenda", "-i", "appointment-soon", "--wait", "-A"])
-        .arg(format!("snooze10={}", i18n::tr("Snooze 10 min")))
-        .arg("-A")
-        .arg(format!("snooze60={}", i18n::tr("Snooze 1 hour")))
+    let (id, occ, title, body, link) = match w {
+        [id, occ, title, body] => (id, occ, title, body, None),
+        [id, occ, title, body, url, service] => (id, occ, title, body, Some((url, service))),
+        _ => return Err("alert-wait ID EPOCH TITLE BODY [LINK SERVICE]".into()),
+    };
+    let mut c = Command::new("notify-send");
+    c.args(["-a", "Agenda", "-i", "appointment-soon", "--wait", "-A"]).arg(format!("snooze10={}", i18n::tr("Snooze 10 min")));
+    match link {
+        Some((_, service)) => {
+            c.arg("-A").arg(format!("join={}", i18n::trf("Join %1", &[service])));
+        }
+        None => {
+            c.arg("-A").arg(format!("snooze60={}", i18n::tr("Snooze 1 hour")));
+        }
+    }
+    let out = c
         .arg("-A")
         .arg(format!("open={}", i18n::tr("Open")))
         .arg(title)
@@ -394,6 +410,17 @@ fn alert_wait(w: &[String]) -> Result<(), String> {
         "snooze10" => snooze(id, occ, 600),
         "snooze60" => snooze(id, occ, 3600),
         // the bubble itself was clicked, or the button
+        "join" => {
+            if let Some((url, _)) = link {
+                let _ = crate::join::open(url);
+            }
+        }
+        // the bubble itself was clicked: the meeting when there is one, else Agenda on the day
+        "default" if link.is_some() => {
+            if let Some((url, _)) = link {
+                let _ = crate::join::open(url);
+            }
+        }
         "open" | "default" => open_on(when::from_epoch(occ)),
         _ => {}
     }
@@ -456,7 +483,7 @@ pub fn tick() -> Result<(), String> {
     let (horizon, catch_up) = (Duration::days(1), Duration::hours(12));
     let mut changed = false;
     // what rings in this tick: (id, title, body, start of the occurrence, minutes late)
-    let mut ringing: Vec<(String, String, String, NaiveDateTime, i64)> = Vec::new();
+    let mut ringing: Vec<(String, String, String, NaiveDateTime, i64, Option<crate::join::Join>)> = Vec::new();
     // snoozed alerts that are due
     let snoozed = fs::read_to_string(snooze_path()).unwrap_or_default();
     let now_epoch = when::to_epoch(now);
@@ -468,7 +495,7 @@ pub fn tick() -> Result<(), String> {
             still.push(line);
         } else if let Some((_, ev)) = all.iter().find(|(i, _)| i == id) {
             let start = when::from_epoch(occ);
-            ringing.push(((*id).to_string(), ev.summary.clone(), alert_body(ev, start, 0), start, 0));
+            ringing.push(((*id).to_string(), ev.summary.clone(), alert_body(ev, start, 0), start, 0, ev.join()));
         }
     }
     if still.len() != snoozed.lines().count() {
@@ -497,21 +524,21 @@ pub fn tick() -> Result<(), String> {
                     continue;
                 }
                 let body = if travel > 0 && *a == travel { i18n::trf("Time to leave for %1", &[&alert_body(ev, start, *a)]) } else { alert_body(ev, start, *a) };
-                ringing.push((id.clone(), ev.summary.clone(), body, start, (now - at).num_minutes()));
+                ringing.push((id.clone(), ev.summary.clone(), body, start, (now - at).num_minutes(), ev.join()));
                 fired.push(key);
                 changed = true;
             }
         }
     }
     // After a suspend or a shutdown many alerts can be late at once: one notice for all of them, never a storm
-    let late: Vec<&(String, String, String, NaiveDateTime, i64)> = ringing.iter().filter(|r| r.4 >= 5).collect();
+    let late: Vec<_> = ringing.iter().filter(|r| r.4 >= 5).collect();
     if late.len() > 2 {
         let titles: Vec<&str> = late.iter().take(4).map(|r| r.1.as_str()).collect();
         notify(&i18n::trf("%1 alerts you missed", &[&late.len()]), &(titles.join(" · ") + if late.len() > 4 { " …" } else { "" }));
         ringing.retain(|r| r.4 < 5);
     }
-    for (id, title, body, start, _) in &ringing {
-        alert(title, body, id, *start);
+    for (id, title, body, start, _, join) in &ringing {
+        alert(title, body, id, *start, join.as_ref());
         emit_alert(id, title, *start);
     }
     // forget the old ones (their alarm is older than 3 days)
@@ -640,6 +667,22 @@ fn run_command(args: &[String]) -> Result<(), String> {
         }
         "tick" => tick()?,
         "free" => free(&o, now)?,
+        "join" => {
+            let (title, j) = match o.words.first() {
+                Some(id) => {
+                    let e = load(id)?;
+                    let j = e.join().ok_or_else(|| i18n::tr("this event has no meeting link").to_string())?;
+                    (e.summary, j)
+                }
+                None => meeting_now(&load_all(), now).map(|(_, t, j, _)| (t, j)).ok_or_else(|| i18n::tr("no meeting with a link right now").to_string())?,
+            };
+            if o.flags.iter().any(|f| f == "print") {
+                println!("{}", j.url);
+            } else {
+                crate::join::open(&j.url)?;
+                println!("{}", i18n::trf("Joining %1 (%2)", &[&title, &j.service]));
+            }
+        }
         "reply" => {
             let (src, ans) = (o.words.first().ok_or("reply needs a file or a link")?, o.words.get(1).ok_or("reply needs accept, maybe or decline")?);
             let answer = invites::Answer::parse(ans).ok_or("the answer is accept, maybe or decline")?;
@@ -676,6 +719,23 @@ fn run_command(args: &[String]) -> Result<(), String> {
         other => return Err(format!("unknown command: {other} (add, quick, edit, rm, show, list, next, tick, import, export)")),
     }
     Ok(())
+}
+
+/// The meeting to join now: one with a link that is on, or starts within half an hour (the earliest first): (id, title, link, start)
+pub fn meeting_now(all: &[(String, Event)], now: NaiveDateTime) -> Option<(String, String, crate::join::Join, NaiveDateTime)> {
+    let soon = now + Duration::minutes(30);
+    let mut found: Vec<(NaiveDateTime, &String, &Event, crate::join::Join)> = all
+        .iter()
+        .filter(|(_, e)| !e.all_day)
+        .filter_map(|(id, e)| Some((id, e, e.join()?)))
+        .flat_map(|(id, e, j)| {
+            // one that has no end is taken as lasting half an hour
+            let len = if e.length() > Duration::zero() { e.length() } else { Duration::minutes(30) };
+            ics::occurrences(e, now - Duration::hours(12), soon + Duration::seconds(1)).into_iter().filter(move |s| *s <= soon && *s + len > now).map(move |s| (s, id, e, j.clone()))
+        })
+        .collect();
+    found.sort_by_key(|f| f.0);
+    found.into_iter().next().map(|(s, id, e, j)| (id.clone(), e.summary.clone(), j, s))
 }
 
 /// `fili-cal free [--on WHEN] [--for 1h] [--from 09:00] [--to 18:00] [--json]`: the free slots of a day (read-only: what the

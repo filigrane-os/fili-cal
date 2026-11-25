@@ -21,6 +21,7 @@ Item {
     property string selectedKey: ""
     property int moreIndex: -1
     signal eventContext(var ev, real x, real y)
+    signal joinRequested(var ev)
     signal slotContext(date at, real x, real y)
     readonly property real cellH: Math.max(40, (height - headH) / 6)
     signal dayClicked(date d)
@@ -151,8 +152,21 @@ Item {
                         border.width: v.selectedKey === modelData.id + "|" + modelData.occ ? 1 : 0
                         border.color: FiliTheme.text
                         Rectangle { visible: !chip.whole; width: 3; height: parent.height - 4; y: 2; radius: 1.5; color: chip.tone }
+                        JoinButton {
+                            tools: v.tools
+                            url: chip.modelData.join || ""
+                            service: chip.modelData.joinService || ""
+                            tone: chip.tone
+                            visible: url !== "" && v.cellW > 90
+                            width: 18
+                            height: 14
+                            radius: 7
+                            anchors { right: parent.right; rightMargin: 1; verticalCenter: parent.verticalCenter }
+                            z: 5
+                            onClicked: v.joinRequested(chip.modelData)
+                        }
                         Text {
-                            anchors { left: parent.left; leftMargin: chip.whole ? 5 : 8; right: parent.right; rightMargin: 4; verticalCenter: parent.verticalCenter }
+                            anchors { left: parent.left; leftMargin: chip.whole ? 5 : 8; right: parent.right; rightMargin: chip.modelData.join ? 22 : 4; verticalCenter: parent.verticalCenter }
                             text: (chip.whole ? "" : v.tools.clock(chip.modelData) + " ") + chip.modelData.title
                             font.strikeout: chip.modelData.done === true
                             elide: Text.ElideRight

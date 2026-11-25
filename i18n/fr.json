@@ -1,4 +1,11 @@
 {
+ "Join": "Rejoindre",
+ "Meeting": "Réunion",
+ "this event has no meeting link": "cet événement n'a pas de lien de visioconférence",
+ "no meeting with a link right now": "aucune réunion avec un lien en ce moment",
+ "Joining %1 (%2)": "Connexion à %1 (%2)",
+ "Join %1": "Rejoindre %1",
+ "not a link": "ce n'est pas un lien",
  "this file is not an invitation": "ce fichier n'est pas une invitation",
  "the invitation has no organizer": "l'invitation n'a pas d'organisateur",
  "no mail account to answer from": "aucun compte de messagerie pour répondre",

@@ -10,6 +10,7 @@ Item {
     property date today: new Date()
     signal eventClicked(var ev)
     signal eventContext(var ev, real x, real y)
+    signal joinRequested(var ev)
     // The box of a whole-day event (a reminder without a time) was ticked
     signal doneToggled(var ev)
     property string selectedKey: ""
@@ -112,7 +113,7 @@ Item {
                     color: FiliTheme.textSecondary
                 }
                 Column {
-                    anchors { left: parent.left; leftMargin: FiliTheme.margin + 94 + (tick.shown ? 24 : 0); right: parent.right; rightMargin: FiliTheme.margin; verticalCenter: parent.verticalCenter }
+                    anchors { left: parent.left; leftMargin: FiliTheme.margin + 94 + (tick.shown ? 24 : 0); right: joinBtn.visible ? joinBtn.left : parent.right; rightMargin: joinBtn.visible ? FiliTheme.space2 : FiliTheme.margin; verticalCenter: parent.verticalCenter }
                     Text {
                         width: parent.width
                         text: row.modelData.head ? "" : row.modelData.ev.title
@@ -131,6 +132,17 @@ Item {
                         font.pixelSize: FiliTheme.sizeSmall
                         color: FiliTheme.muted
                     }
+                }
+                JoinButton {
+                    id: joinBtn
+                    tools: v.tools
+                    url: !row.modelData.head && row.modelData.ev.join ? row.modelData.ev.join : ""
+                    service: !row.modelData.head && row.modelData.ev.joinService ? row.modelData.ev.joinService : ""
+                    tone: row.modelData.head ? FiliTheme.accentColor : v.tools.colorOf(row.modelData.ev)
+                    labelled: true
+                    anchors { right: parent.right; rightMargin: FiliTheme.margin; verticalCenter: parent.verticalCenter }
+                    z: 5
+                    onClicked: v.joinRequested(row.modelData.ev)
                 }
                 MouseArea {
                     id: area
