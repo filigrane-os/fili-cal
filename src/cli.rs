@@ -449,7 +449,11 @@ fn run_command(args: &[String]) -> Result<(), String> {
             }
             let id = new_id();
             let alarms = if words[0].starts_with('+') { vec![0] } else if all_day { vec![] } else { crate::settings::default_alarms() };
-            let e = Event { uid: format!("{id}@filigrane"), summary: title, start, all_day, alarms, ..Event::default() };
+            let calendar = match o.one.get("calendar") {
+                Some(c) => calendars::find(c).ok_or_else(|| format!("no calendar named {c}"))?.slug,
+                None => String::new(),
+            };
+            let e = Event { uid: format!("{id}@filigrane"), summary: title, start, all_day, alarms, calendar, ..Event::default() };
             save(&id, &e)?;
             println!("{id}");
             let _ = tick();
