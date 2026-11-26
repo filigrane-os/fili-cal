@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- `package.env` for the xbps package of Filigrane: the Qt, curl, keyring, notification and clipboard dependencies, and the
+  `agenda` alias.
+
 ## 0.2.0
 
 Agenda becomes a calendar you can live in.
