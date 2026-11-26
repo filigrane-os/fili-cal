@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+
+- `scripts/fili-api-lint` is again the distribution's copy, byte for byte (a comment had drifted).
+
 ## 0.2.1
 
 - `package.env` for the xbps package of Filigrane: the Qt, curl, keyring, notification and clipboard dependencies, and the

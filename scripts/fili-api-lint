@@ -299,7 +299,7 @@ def lint_ai_ui(c, stem=None):
 
 def source_actions(root):
     """Names of the actions of the window, in the order of the source: the ACTIONS table of src/ctl.rs, else the menuActions
-    table of qml/Main.qml (Casier), else its `"name": { on: ...` table (Baladeur, Agenda)."""
+    table of qml/Main.qml (Casier), else its `"name": { on: ...` table (Baladeur, Cassette)."""
     ctl = root / "src/ctl.rs"
     if ctl.is_file():
         m = re.search(r"pub const ACTIONS: &\[&str\] = &\[(.*?)\];", ctl.read_text(), re.S)
