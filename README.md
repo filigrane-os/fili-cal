@@ -31,3 +31,11 @@ fili-cal --view month --shot agenda.png     # picture of the window without a sc
 ```
 
 GPL-3.0-or-later. The interface comes from the [fili-ui](https://github.com/filigrane-os/fili-ui) kit.
+
+## Weight
+
+Measured on each release, the window open and idle (resident memory, CPU averaged over 10 s).
+
+| Version | Window RAM (RSS) | CPU idle |
+|---|---|---|
+| 0.2.2 | 122 MB | 1.0 % (just opened) |
