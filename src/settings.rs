@@ -10,6 +10,8 @@
 //! week_numbers = false      # the number of the week in the month view
 //! travel_time = "0m"        # an extra alert this long before an event that has a place ("20m")
 //! first_hour = 7            # the hour the day and week views scroll to when today is not shown
+//! place_suggestions = true   # suggest real places as the Place field is typed (the button next to the field sets it)
+//! place_search = "https://photon.komoot.io/api/"  # the Photon server asked for them (OpenStreetMap); "none" to turn off
 //! ```
 use std::fs;
 
@@ -38,7 +40,69 @@ pub fn ensure_file() {
     if let Some(dir) = p.parent() {
         let _ = fs::create_dir_all(dir);
     }
-    let _ = fs::write(&p, "[agenda]\n# first_day = \"monday\"     # monday ... sunday; default: the first day of the language\n# clock = 24             # 24 or 12 hours\n# default_length = \"1h\"  # length of a new event\n# default_alert = \"10m\"  # alert of a new timed event, \"none\" for no alert\n# work_week = false      # hide Saturday and Sunday in the week and month views\n# week_numbers = false   # the number of the week in the month view\n# travel_time = \"20m\"  # an extra alert this long before an event that has a place\n# first_hour = 7         # the hour the day and week views scroll to when today is not shown\n# all_day_alert_hour = 9 # the hour the alert of a whole-day event rings\n");
+    let _ = fs::write(&p, "[agenda]\n# first_day = \"monday\"     # monday ... sunday; default: the first day of the language\n# clock = 24             # 24 or 12 hours\n# default_length = \"1h\"  # length of a new event\n# default_alert = \"10m\"  # alert of a new timed event, \"none\" for no alert\n# work_week = false      # hide Saturday and Sunday in the week and month views\n# week_numbers = false   # the number of the week in the month view\n# travel_time = \"20m\"  # an extra alert this long before an event that has a place\n# first_hour = 7         # the hour the day and week views scroll to when today is not shown\n# all_day_alert_hour = 9 # the hour the alert of a whole-day event rings\n# place_suggestions = true  # suggest real places as the Place field is typed (sends that text to the server below)\n# place_search = \"https://photon.komoot.io/api/\"  # the Photon server asked for them (OpenStreetMap), \"none\" to turn off\n");
+}
+
+/// The Photon server that suggests places as they are typed (komoot's public one by default: free, open source, OpenStreetMap
+/// data); "none" or "" turns the suggestions off. Only the text typed in the Place field is sent.
+pub fn place_server() -> String {
+    match value("place_search") {
+        Some(v) if v == "none" || v.is_empty() => String::new(),
+        Some(v) => v,
+        None => "https://photon.komoot.io/api/".to_string(),
+    }
+}
+
+/// Whether the Place field suggests places: on by default, turned off by the button next to the field (`place_suggestions`)
+pub fn place_suggestions() -> bool {
+    value("place_suggestions").is_none_or(|v| v != "false")
+}
+
+/// The server the Place field asks while typing, empty when the suggestions are off
+pub fn place_search() -> String {
+    if place_suggestions() { place_server() } else { String::new() }
+}
+
+/// Writes `key = value` in the `[agenda]` section of fili-cal.toml (value as TOML: `true`, `"1h"`): replaces the key, or its
+/// commented-out line, or adds it at the end of the section; the rest of the file and its comments stay as they are
+pub fn set(key: &str, value: &str) -> std::io::Result<()> {
+    ensure_file();
+    let p = theme::path();
+    let text = fs::read_to_string(&p).unwrap_or_default();
+    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    let new = format!("{key} = {value}");
+    let (mut section, mut set_at, mut commented, mut end) = (None::<bool>, None, None, None);
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim();
+        if let Some(name) = t.strip_prefix('[').and_then(|r| r.split(']').next()) {
+            if section == Some(true) && end.is_none() {
+                end = Some(i);
+            }
+            section = Some(name.trim() == "agenda");
+            continue;
+        }
+        if section != Some(true) {
+            continue;
+        }
+        let k = |s: &str| s.split_once('=').map(|(k, _)| k.trim().to_string());
+        if k(t.split('#').next().unwrap_or("")).as_deref() == Some(key) {
+            set_at = Some(i);
+        } else if let Some(c) = t.strip_prefix('#') && k(c).as_deref() == Some(key) && commented.is_none() {
+            commented = Some(i);
+        }
+    }
+    match (set_at, commented) {
+        (Some(i), _) | (None, Some(i)) => lines[i] = new,
+        (None, None) if section.is_some() && lines.iter().any(|l| l.trim() == "[agenda]") => {
+            let at = end.unwrap_or(lines.len());
+            lines.insert(at, new);
+        }
+        _ => {
+            lines.push("[agenda]".to_string());
+            lines.push(new);
+        }
+    }
+    fs::write(&p, lines.join("\n") + "\n")
 }
 
 /// Time to get to an event that has a place, in seconds (an extra alert that long before it; 0 = none, the default)
@@ -90,6 +154,9 @@ pub fn json() -> String {
         "firstHour": value("first_hour").and_then(|h| h.parse::<u32>().ok()).filter(|h| *h < 24).unwrap_or(7),
         "defaultLength": default_length() / 60,
         "defaultAlert": default_alert().unwrap_or(-1),
+        "placeSearch": place_search(),
+        "placeSuggestions": place_suggestions(),
+        "placeServer": place_server(),
     })
     .to_string()
 }
@@ -105,9 +172,25 @@ mod tests {
         // SAFETY: only this test sets this variable
         unsafe { std::env::set_var("XDG_CONFIG_HOME", &tmp) };
         assert_eq!((default_length(), default_alert()), (3600, Some(600)));
+        assert_eq!(place_search(), "https://photon.komoot.io/api/");
         fs::create_dir_all(tmp.join("filigrane")).unwrap();
         fs::write(theme::path(), "[theme]\nfirst_day = \"friday\"\n[agenda]\nfirst_day = \"monday\" # comment\nclock = 12\ndefault_length = \"45m\"\ndefault_alert = \"none\"\nfirst_hour = 8\n").unwrap();
         assert_eq!((default_length(), default_alert()), (2700, None));
+        fs::write(theme::path(), "[agenda]\nplace_search = \"none\"\n").unwrap();
+        assert_eq!(place_search(), "");
+        // The button of the Place field: the key is written in [agenda], over its commented-out line, the rest kept
+        fs::write(theme::path(), "[theme]\naccent = \"blue\"\n[agenda]\n# place_suggestions = true  # note\nclock = 12\n[other]\nx = 1\n").unwrap();
+        set("place_suggestions", "false").unwrap();
+        assert!(!place_suggestions());
+        assert_eq!(place_search(), "");
+        assert_eq!(place_server(), "https://photon.komoot.io/api/");
+        set("place_suggestions", "true").unwrap();
+        assert!(place_suggestions());
+        assert_eq!(fs::read_to_string(theme::path()).unwrap(), "[theme]\naccent = \"blue\"\n[agenda]\nplace_suggestions = true\nclock = 12\n[other]\nx = 1\n");
+        fs::write(theme::path(), "[theme]\naccent = \"blue\"\n").unwrap();
+        set("place_suggestions", "false").unwrap();
+        assert_eq!(fs::read_to_string(theme::path()).unwrap(), "[theme]\naccent = \"blue\"\n[agenda]\nplace_suggestions = false\n");
+        fs::write(theme::path(), "[theme]\nfirst_day = \"friday\"\n[agenda]\nfirst_day = \"monday\" # comment\nclock = 12\ndefault_length = \"45m\"\ndefault_alert = \"none\"\nfirst_hour = 8\n").unwrap();
         let v: serde_json::Value = serde_json::from_str(&json()).unwrap();
         assert_eq!((v["firstDay"].as_i64(), v["clock12"].as_bool(), v["firstHour"].as_i64(), v["defaultAlert"].as_i64()), (Some(1), Some(true), Some(8), Some(-1)));
         let _ = fs::remove_dir_all(&tmp);

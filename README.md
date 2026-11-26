@@ -17,6 +17,10 @@ drag to create, move and resize, search, undo, several calendars with the colour
 - `fili-cal ctl action NAME` drives the open window (its menu in the fili-bar is `shell/appmenu/fili-cal.json`); the window tells
   `fili-context` what it shows.
 - Settings: `~/.config/filigrane/fili-cal.toml`, section `[agenda]` ("Settings…" creates it with every key commented).
+- Network: the place field suggests real places as you type by sending that text to a Photon server (OpenStreetMap data,
+  `photon.komoot.io` by default). A line under the field says so, and the compass button next to it turns this off
+  (`place_suggestions = false`); `place_search` points to another server, or `"none"`. Nothing else is sent anywhere except the
+  calendars you subscribe to or connect.
 
 ```
 make dev && make run        # fast build, QML read from the sources

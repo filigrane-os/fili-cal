@@ -2,6 +2,7 @@
 // occurrence (a series asks nothing: the change is for the whole series), `create(date)` on a new event. Enter saves, Esc
 // closes. `saved(id, json)` (id empty for a new event) and `deleted(id, occ, all)` are for the owner to apply.
 import QtQuick
+import QtQuick.Dialogs
 import Fili.Agenda
 import Fili.UI
 
@@ -26,6 +27,8 @@ FiliDialog {
     // All the meeting links of the event (taken out of the notes shown)
     property var joinUrls: []
     signal joinRequested(string url)
+    // The button next to the Place field turns the place suggestions on or off (the owner writes it in fili-cal.toml)
+    signal placeSuggestionsToggled(bool on)
     // The calendars [{slug, name, color, hidden}] and the one the event is in
     property var calendars: []
     property string calendar: "personal"
@@ -37,6 +40,8 @@ FiliDialog {
     // The alerts of the event, in seconds before it (0 = at the time, negative = after): as many as the user wants
     property var alertList: []
     readonly property bool isNew: eventId === ""
+    // The host the place suggestions are asked from (photon.komoot.io by default), told under the Place field
+    readonly property string placeHost: (tools.prefs.placeServer || "").replace(/^[a-z]+:\/\//, "").split("/")[0]
     // The event is shown first, not editable; the Edit button switches to the form (a new event opens on the form)
     property bool editing: false
     readonly property bool viewing: !isNew && !editing
@@ -170,6 +175,15 @@ FiliDialog {
         open();
         titleField.focusField();
     }
+    // A new event proposed by another program (`fili-cal --new`, Facteur's "Add to Agenda"): {title, place, note, start}, start
+    // "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" when it is known (otherwise `fallback`). Nothing is saved until Save.
+    function propose(o, fallback) {
+        const d = o.start ? tools.parse(o.start) : null;
+        create(d && !isNaN(d.getTime()) ? d : fallback);
+        titleField.text = o.title || "";
+        placeField.text = o.place || "";
+        noteField.text = o.note || "";
+    }
     // A file dropped on the window while the editor is open: attached to this event
     function attach(url) {
         const path = decodeURIComponent(String(url).replace(/^file:\/\//, ""));
@@ -268,6 +282,18 @@ FiliDialog {
             re.lastIndex = last;
         }
         return out + esc(text.slice(last));
+    }
+    // The suggestions of a Photon answer (GeoJSON): the name of the place, and its address under it
+    function places(geo) {
+        const seen = new Set();
+        return (geo.features || []).map(ft => {
+            const p = ft.properties || {};
+            const street = [p.housenumber, p.street].filter(Boolean).join(" ");
+            const town = [p.postcode, p.city || p.town || p.village].filter(Boolean).join(" ");
+            const name = p.name || street || town;
+            const address = [p.name ? street : "", town !== name ? town : ""].filter(Boolean);
+            return { label: name, detail: address.concat(p.country ? [p.country] : []).join(", "), value: [name].concat(address).join(", ") };
+        }).filter(s => s.label !== "" && !seen.has(s.value) && seen.add(s.value));
     }
     // Only web links are opened from the text of an event
     function openLink(link) { if (/^https?:\/\//.test(link)) Fili.openPath(link); }
@@ -456,7 +482,76 @@ FiliDialog {
     Row2 {
         visible: !ed.viewing
         label: Fili.tr("Place")
-        FiliTextField { id: placeField; width: ed.cardWidth - 2 * FiliTheme.space5 - 84 - FiliTheme.space3; placeholder: Fili.tr("Where"); onAccepted: ed.accept() }
+        Column {
+            spacing: FiliTheme.space1
+            Row {
+                spacing: FiliTheme.space2
+                FiliTextField {
+                    id: placeField
+                    width: ed.cardWidth - 2 * FiliTheme.space5 - 84 - FiliTheme.space3 - placeToggle.width - FiliTheme.space2
+                    placeholder: Fili.tr("Where")
+                    onAccepted: ed.accept()
+                    // Real places as they are typed (Photon, OpenStreetMap), when the setting allows it and the network answers
+                    onTextEdited: placeSearch.restart()
+                }
+                // The suggestions send what is typed to a server: the user sees it under the field and decides here
+                FiliIconButton {
+                    id: placeToggle
+                    anchors.verticalCenter: placeField.verticalCenter
+                    visible: ed.tools.prefs.placeServer !== ""
+                    name: "compass"
+                    toggled: ed.tools.prefs.placeSuggestions !== false
+                    tip: toggled ? Fili.tr("Turn off the place suggestions") : Fili.tr("Turn on the place suggestions")
+                    onClicked: {
+                        placeField.suggestions = [];
+                        ed.placeSuggestionsToggled(!toggled);
+                    }
+                    Accessible.name: tip
+                }
+            }
+            Text {
+                visible: placeToggle.visible
+                width: placeField.width
+                wrapMode: Text.Wrap
+                text: placeToggle.toggled
+                    ? Fili.tr("Suggestions from OpenStreetMap: what you type here is sent to %1.").replace("%1", ed.placeHost)
+                    : Fili.tr("Place suggestions are off: nothing you type here leaves this computer.")
+                font.family: FiliTheme.font
+                font.pixelSize: FiliTheme.sizeSmall
+                color: FiliTheme.muted
+            }
+        }
+        Timer {
+            id: placeSearch
+            interval: 350
+            property var request: null
+            onTriggered: {
+                const url = ed.tools.prefs.placeSearch || "", q = placeField.text.trim();
+                if (request)
+                    request.abort();
+                if (url === "" || q.length < 3 || /^https?:\/\//.test(q)) {
+                    placeField.suggestions = [];
+                    return;
+                }
+                const lang = Qt.locale().name.slice(0, 2);
+                const x = new XMLHttpRequest();
+                request = x;
+                x.onreadystatechange = () => {
+                    if (x.readyState !== XMLHttpRequest.DONE || request !== x)
+                        return;
+                    request = null;
+                    if (x.status !== 200 || placeField.text.trim() !== q)
+                        return;
+                    try {
+                        placeField.suggestions = ed.places(JSON.parse(x.responseText));
+                    } catch (e) {
+                        placeField.suggestions = [];
+                    }
+                };
+                x.open("GET", url + "?limit=5&q=" + encodeURIComponent(q) + (["en", "de", "fr"].includes(lang) ? "&lang=" + lang : ""));
+                x.send();
+            }
+        }
     }
     Row2 {
         visible: !ed.viewing
@@ -468,12 +563,33 @@ FiliDialog {
         visible: !ed.viewing
         width: parent.width
         spacing: 2
-        Text {
-            visible: ed.attachments.length === 0 && !ed.readOnly
-            text: Fili.tr("Drop a file here to attach it")
-            font.family: FiliTheme.font
-            font.pixelSize: FiliTheme.sizeSmall
-            color: FiliTheme.muted
+        // Files are dropped on the card, or chosen in the file chooser (the portal: Casier) with the link
+        Row {
+            visible: !ed.readOnly
+            spacing: FiliTheme.space1
+            Text {
+                visible: ed.attachments.length === 0
+                text: Fili.tr("Drop files here, or")
+                font.family: FiliTheme.font
+                font.pixelSize: FiliTheme.sizeSmall
+                color: FiliTheme.muted
+            }
+            Text {
+                text: ed.attachments.length === 0 ? Fili.tr("choose files…") : Fili.tr("Attach more files…")
+                font.family: FiliTheme.font
+                font.pixelSize: FiliTheme.sizeSmall
+                font.underline: true
+                color: FiliTheme.accentColor
+                Accessible.role: Accessible.Link
+                Accessible.name: Fili.tr("Attach files")
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: filePicker.open() }
+            }
+        }
+        FileDialog {
+            id: filePicker
+            title: Fili.tr("Attach files")
+            fileMode: FileDialog.OpenFiles
+            onAccepted: selectedFiles.forEach(u => ed.attach(u.toString()))
         }
         Repeater {
             model: ed.attachments

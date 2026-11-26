@@ -184,6 +184,18 @@ ApplicationWindow {
             anchor = tools.day(tools.parse(cal.startupGoto()));
         if (cal.startupSource() !== "")
             Qt.callLater(() => importDialog.show(cal.startupSource()));
+        if (cal.startupNew() !== "")
+            Qt.callLater(() => propose(cal.startupNew()));
+    }
+    // `fili-cal --new JSON`: {title, place, note, start}; the editor opens on its day
+    function propose(text) {
+        let o = {};
+        try { o = JSON.parse(text); } catch (e) { return; }
+        const d = o.start ? tools.parse(o.start) : null;
+        if (d && !isNaN(d.getTime()))
+            anchor = tools.day(d);
+        const now = new Date();
+        editor.propose(o, new Date(now.getFullYear(), now.getMonth(), now.getDate(), Math.min(23, now.getHours() + 1), 0));
     }
     // A file dropped on the window: its import preview
     DropArea {
@@ -346,6 +358,8 @@ ApplicationWindow {
         "goto": { on: () => true, run: rest => { const d = tools.parse(rest); if (!isNaN(d.getTime())) win.anchor = tools.day(d); } },
         "import": { on: () => !win.typing, run: () => importDialog.show("") },
         "import-file": { on: () => true, run: rest => { importDialog.show(rest); win.raise(); } },
+        // A new event proposed by another program (fili-cal --new JSON): the editor, filled, not saved
+        "new-from": { on: () => true, run: rest => { win.propose(rest); win.raise(); } },
         "export": { on: () => !win.typing, run: () => exportDialog.start() },
         "add-account": { on: () => !win.typing, run: () => accountDialog.start() },
         "new-calendar": { on: () => !win.typing, run: () => calendarDialog.create() },
@@ -526,9 +540,11 @@ ApplicationWindow {
                 border.width: FiliTheme.borderWidth
                 border.color: win.attending ? win.tintBorder : FiliTheme.border
             }
+            // Centred in the window, as in iCal; pushed left of New when the window is too narrow for that
             Row {
                 id: views
-                anchors { right: addButton.left; rightMargin: FiliTheme.space4 + FiliTheme.space1 + 1; verticalCenter: parent.verticalCenter }
+                x: Math.min(Math.round((toolbar.width - width) / 2), addButton.x - FiliTheme.space4 - FiliTheme.space1 - 1 - width)
+                anchors.verticalCenter: parent.verticalCenter
                 spacing: FiliTheme.space1
                 Repeater {
                     model: [{ id: "day", label: Fili.tr("Day") }, { id: "week", label: Fili.tr("Week") }, { id: "month", label: Fili.tr("Month") }, { id: "year", label: Fili.tr("Year") }, { id: "list", label: Fili.tr("List") }]
@@ -898,6 +914,7 @@ ApplicationWindow {
             tools: tools
             onVisibleChanged: Qt.callLater(win.publishContext)
             onJoinRequested: url => cal.joinUrl(url)
+            onPlaceSuggestionsToggled: on => { cal.setPlaceSuggestions(on); tools.prefs = JSON.parse(cal.settings()); }
             calendars: win.calendars
             onSaved: (id, json) => win.applySaved(id, json)
             onDeleted: (id, occ, all) => win.applyDeleted(id, occ, all)

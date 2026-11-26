@@ -181,6 +181,10 @@
       "args": "PATH_OR_LINK"
     },
     {
+      "name": "new-from",
+      "args": "JSON"
+    },
+    {
       "name": "export",
       "label": "Export…",
       "keys": "Ctrl+E"

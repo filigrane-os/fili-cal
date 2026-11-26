@@ -15,18 +15,22 @@ FiliDialog {
     // An invitation was answered: "accept", "maybe" or "decline"
     signal answered(string source, string answer, string calendar)
     readonly property var invite: info.ok === true && info.invite ? info.invite : null
+    // The file was handed over (by Facteur, the system, a drop): no field to type it in
+    property bool given: false
 
-    title: Fili.tr("Import events")
-    confirmLabel: Fili.tr("Add to calendar")
+    title: invite ? Fili.tr("Invitation") : Fili.tr("Import events")
+    confirmLabel: invite ? Fili.tr("Add without answering") : Fili.tr("Add to calendar")
     cardWidth: 460
     confirmEnabled: info.ok === true
 
     function show(source) {
+        given = !!source;
         sourceField.text = source || "";
         calendar = (calendars.find(c => !c.hidden && !c.subscribed) || calendars.find(c => !c.subscribed) || { slug: "personal" }).slug;
         refresh();
         open();
-        sourceField.focusField();
+        if (!given)
+            sourceField.focusField();
     }
     function refresh() {
         const s = sourceField.text.trim();
@@ -35,6 +39,7 @@ FiliDialog {
     onAccepted: imported(sourceField.text.trim(), calendar)
 
     Text {
+        visible: !dlg.given
         width: parent.width
         wrapMode: Text.WordWrap
         text: Fili.tr("Drop an .ics file here, or type its path or link.")
@@ -42,7 +47,7 @@ FiliDialog {
         font.pixelSize: FiliTheme.sizeSmall
         color: FiliTheme.muted
     }
-    FiliTextField { id: sourceField; width: parent.width; placeholder: Fili.tr("File or link"); onTextChanged: dlg.refresh(); onAccepted: dlg.accept() }
+    FiliTextField { id: sourceField; visible: !dlg.given; width: parent.width; placeholder: Fili.tr("File or link"); onTextChanged: dlg.refresh(); onAccepted: dlg.accept() }
     Text {
         visible: !dlg.info.ok && dlg.info.error !== undefined && sourceField.text.trim() !== ""
         width: parent.width
@@ -106,7 +111,7 @@ FiliDialog {
                 visible: dlg.invite && dlg.invite.account !== ""
                 width: parent.width
                 wrapMode: Text.WordWrap
-                text: dlg.invite ? Fili.tr("The answer is sent to %1 from %2.").replace("%1", dlg.invite.organizer).replace("%2", dlg.invite.account) : ""
+                text: dlg.invite ? Fili.tr("Accept and Maybe add the event to the calendar, Decline does not; each answer is sent to %1 from %2.").replace("%1", dlg.invite.organizer).replace("%2", dlg.invite.account) : ""
                 font.family: FiliTheme.font
                 font.pixelSize: FiliTheme.sizeSmall
                 color: FiliTheme.muted

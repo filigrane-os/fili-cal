@@ -28,6 +28,10 @@ Agenda becomes a calendar you can live in.
 - Invitations: Accept, Maybe, Decline in the import dialog, answered by Facteur; the clock card of the bar marks the days with events,
   lists the day selected and joins meetings (`fili-cal --goto DAY`).
 - Settings in `fili-cal.toml` (first day, 12 or 24 hours, default length and alert, first hour, work week, week numbers, travel time).
+- The place field suggests real places as you type (Photon, OpenStreetMap). A line under the field says that the text goes to
+  `photon.komoot.io`, and the compass button next to it turns the suggestions off (`place_suggestions`; `place_search` sets the server).
+- `fili-cal --new JSON` (and the `new-from` action) opens the editor of a new event, filled and not saved: Facteur's "Add to Agenda".
+- An invitation handed over by Facteur or the system opens without the file field, its button says "Add without answering".
 - For Lia and scripts: the window publishes its context, `goto`, `select` and `search` actions, `fili-cal free`.
 - `make test-window` drives the window offscreen.
 

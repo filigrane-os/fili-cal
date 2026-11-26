@@ -181,6 +181,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "startupSource"]
         fn startup_source(self: &Agenda) -> QString;
+        // The event proposed with `fili-cal --new JSON` (Facteur's "Add to Agenda"), empty otherwise
+        #[qinvokable]
+        #[cxx_name = "startupNew"]
+        fn startup_new(self: &Agenda) -> QString;
         // Connects a CalDAV account (address, user, password) in a process of its own: the calendars of the account appear when
         // it is done, and `message` says how it went. The password goes to the keyring, nowhere else.
         #[qinvokable]
@@ -201,6 +205,10 @@ pub mod qobject {
         // The `[agenda]` settings of fili-cal.toml as JSON (see settings.rs)
         #[qinvokable]
         fn settings(self: &Agenda) -> QString;
+        // The button next to the Place field: whether typing there asks the place server (place_suggestions in fili-cal.toml)
+        #[qinvokable]
+        #[cxx_name = "setPlaceSuggestions"]
+        fn set_place_suggestions(self: &Agenda, on: bool);
         #[qinvokable]
         fn undo(self: Pin<&mut Agenda>) -> bool;
         #[qinvokable]
@@ -734,6 +742,10 @@ impl qobject::Agenda {
         QString::from(&std::env::var("FILI_CAL_OPEN").unwrap_or_default())
     }
 
+    pub fn startup_new(&self) -> QString {
+        QString::from(&std::env::var("FILI_CAL_NEW").unwrap_or_default())
+    }
+
     pub fn account_connect(mut self: Pin<&mut Self>, address: &QString, user: &QString, password: &QString) {
         let (address, user, password) = (address.to_string(), user.to_string(), password.to_string());
         let Ok(exe) = std::env::current_exe() else { return };
@@ -817,6 +829,12 @@ impl qobject::Agenda {
 
     pub fn settings(&self) -> QString {
         QString::from(&crate::settings::json())
+    }
+
+    pub fn set_place_suggestions(&self, on: bool) {
+        if let Err(e) = crate::settings::set("place_suggestions", if on { "true" } else { "false" }) {
+            eprintln!("fili-cal: cannot write the settings: {e}");
+        }
     }
 
     pub fn undo_state(&self) -> QString {
