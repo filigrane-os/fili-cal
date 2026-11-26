@@ -823,13 +823,13 @@ ApplicationWindow {
             FiliTextField {
                 id: quickField
                 width: parent.width
-                placeholder: Fili.tr("tomorrow 14:30 Dentist · +30m Take the bread out · 2026-12-24 Christmas Eve")
+                placeholder: Fili.tr("tomorrow 14:30 Dentist · +30m Bread = reminder in 30 min")
                 onAccepted: quick.accept()
             }
             Text {
                 width: parent.width
                 wrapMode: Text.Wrap
-                text: quick.ok ? (quick.parsed.reminder ? Fili.tr("Reminder") + " · " : "") + quick.parsed.title + "  —  " + (quick.parsed.allDay ? tools.parse(quick.parsed.start).toLocaleDateString(Qt.locale(), "dddd d MMMM") : tools.parse(quick.parsed.start).toLocaleString(Qt.locale(), "dddd d MMMM, HH:mm")) : Fili.tr("Start with when: 14:30, tomorrow 09:00, monday 18:00, 2026-12-24, +30m")
+                text: quick.ok ? (quick.parsed.reminder ? Fili.tr("Reminder") + " · " : "") + quick.parsed.title + "  —  " + (quick.parsed.allDay ? tools.parse(quick.parsed.start).toLocaleDateString(Qt.locale(), "dddd d MMMM") : tools.parse(quick.parsed.start).toLocaleString(Qt.locale(), "dddd d MMMM, HH:mm")) : Fili.tr("Start with when: 14:30, tomorrow 09:00, monday 18:00, 2026-12-24. A + makes a reminder that rings at that time: +30m, +2h")
                 font.family: FiliTheme.font
                 font.pixelSize: FiliTheme.sizeSmall
                 color: quick.ok ? FiliTheme.textSecondary : FiliTheme.muted
