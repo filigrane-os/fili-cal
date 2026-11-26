@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- The `fili-ui` kit is v0.7.1: a clearer selection (the accent wash twice as dense), and a password field shows an eye to
+  reveal what was typed.
+
 ## 0.2.2
 
 - `scripts/fili-api-lint` is again the distribution's copy, byte for byte (a comment had drifted).
